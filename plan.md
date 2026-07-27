@@ -14,22 +14,29 @@ items never left to the end.**
 Goal: a URL that responds over HTTPS before any feature exists. Removes the single
 biggest submission risk ("if it's not live and deployed, it's an automatic no").
 
-- [ ] Repo init, `.gitignore` (exclude `data/`, `.env`, `*.sqlite3`)
-- [ ] `requirements.txt` pinned
-- [ ] `config/settings.py` — one file, env-driven, SQLite with WAL pragmas
-- [ ] `core.BaseModel` (UUID pk, timestamps)
-- [ ] `/healthz` returning DB write check + thread liveness
-- [ ] `config/asgi.py` — ProtocolTypeRouter, boot assert for single-worker (I1)
-- [ ] `Dockerfile`, `docker-compose.yml`, `Caddyfile`
-- [ ] VM provisioned (Oracle Always Free ARM, or Hetzner CX22)
+- [x] Repo init, `.gitignore` (exclude `data/`, `.env`, `*.sqlite3`)
+- [x] `requirements.txt` pinned
+- [x] `config/settings.py` — one file, env-driven, SQLite with WAL pragmas
+- [x] `core.BaseModel` (UUID pk, timestamps)
+- [x] `/healthz` returning DB write check + thread liveness
+- [x] `config/asgi.py` — ProtocolTypeRouter, boot assert for single-worker (I1)
+- [x] `Dockerfile`, `docker-compose.yml`, `Caddyfile`
+- [ ] VM provisioned (Oracle Always Free ARM, or Hetzner CX22)  ← **deploy handoff**
 - [ ] Domain on Cloudflare DNS; `app.<domain>` → VM, `help-demo.<domain>` CNAME set up
-      for the phase-9 custom-domain demo
-- [ ] `docker compose up -d` on the VM, Caddy issuing a real cert
-- [ ] `.env.example` complete
-- [ ] `README.md` stub with architecture heading
+      for the phase-9 custom-domain demo  ← **deploy handoff**
+- [ ] `docker compose up -d` on the VM, Caddy issuing a real cert  ← **deploy handoff**
+- [x] `.env.example` complete
+- [x] `README.md` stub with architecture heading
+
+Verified locally + in Docker: `docker build` succeeds, container runs `migrate` +
+single-worker uvicorn, `/healthz` → 200 `{"status":"ok","db":"ok","threads":{}}`; WAL +
+`foreign_keys`/`busy_timeout` pragmas active on every connection; I1 assert refuses
+`>1` worker; custom `accounts_user` table (no `auth_user`). The three unchecked items
+need a VM + Cloudflare + deploy access — see the deploy runbook.
 
 **Gate:** `https://app.<domain>/healthz` returns 200 with a valid certificate, from
-a container image built by `docker build`.
+a container image built by `docker build`. _(Image + `/healthz` proven; live cert
+pending the deploy handoff.)_
 
 ---
 
