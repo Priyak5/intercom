@@ -1,7 +1,12 @@
 services:
   app:
     build: .
+    image: support-poc:latest
     env_file: .env
+    # Published on localhost only (never all interfaces). Caddy reaches the app over the
+    # compose network as `app:8000`, not through this mapping — this is purely for local
+    # access/debugging. Override the host port with APP_PORT if 8000 is taken.
+    ports: ["127.0.0.1:${APP_PORT:-8000}:8000"]
     volumes: ["./data:/app/data"]
     restart: unless-stopped
     healthcheck:
@@ -12,6 +17,11 @@ services:
       start_period: 20s
   caddy:
     image: caddy:2-alpine
+    # Public TLS ingress. Only meaningful with a real domain (auto-TLS via Let's Encrypt),
+    # so it is opt-in via the `proxy` profile and binds privileged ports 80/443.
+    #   VM  : docker compose --profile proxy up -d --build
+    #   local: omit the profile (just `docker compose up`) and hit http://127.0.0.1:8000
+    profiles: ["proxy"]
     depends_on: [app]
     environment:
       - BASE_DOMAIN=${BASE_DOMAIN}

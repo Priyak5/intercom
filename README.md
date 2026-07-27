@@ -24,8 +24,10 @@ cp .env.example .env            # then fill it in
 python manage.py migrate
 uvicorn config.asgi:application --port 8000   # --workers stays 1
 
-# docker
-docker compose up --build       # app + caddy
+# docker — local: app only, reachable at http://127.0.0.1:8000
+docker compose up --build
+# on the VM: add Caddy (public TLS on 80/443) via the opt-in profile
+docker compose --profile proxy up -d --build
 ```
 
 ## Known Limitations
