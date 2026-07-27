@@ -1,0 +1,293 @@
+# plan.md — Build Plan to Closure
+
+Ten working phases. Each has a hard acceptance gate. Do not start phase N+1 until
+phase N's gate is fully checked. `CLAUDE.md` §9 defines "done"; this file defines
+"done *with what*".
+
+Ordering principle: **deploy on day one, hardest thing while fresh, graded-checklist
+items never left to the end.**
+
+---
+
+## Phase 0 — Skeleton + live deploy (Day 1, half day)
+
+Goal: a URL that responds over HTTPS before any feature exists. Removes the single
+biggest submission risk ("if it's not live and deployed, it's an automatic no").
+
+- [ ] Repo init, `.gitignore` (exclude `data/`, `.env`, `*.sqlite3`)
+- [ ] `requirements.txt` pinned
+- [ ] `config/settings.py` — one file, env-driven, SQLite with WAL pragmas
+- [ ] `core.BaseModel` (UUID pk, timestamps)
+- [ ] `/healthz` returning DB write check + thread liveness
+- [ ] `config/asgi.py` — ProtocolTypeRouter, boot assert for single-worker (I1)
+- [ ] `Dockerfile`, `docker-compose.yml`, `Caddyfile`
+- [ ] VM provisioned (Oracle Always Free ARM, or Hetzner CX22)
+- [ ] Domain on Cloudflare DNS; `app.<domain>` → VM, `help-demo.<domain>` CNAME set up
+      for the phase-9 custom-domain demo
+- [ ] `docker compose up -d` on the VM, Caddy issuing a real cert
+- [ ] `.env.example` complete
+- [ ] `README.md` stub with architecture heading
+
+**Gate:** `https://app.<domain>/healthz` returns 200 with a valid certificate, from
+a container image built by `docker build`.
+
+---
+
+## Phase 1 — Auth, workspaces, tenancy (Day 1 second half – Day 2)
+
+Requirement #1.
+
+- [ ] `User` (email login, `USERNAME_FIELD = "email"`), `Workspace`, `Membership`, `Invite`
+- [ ] Signup creates User + Workspace + admin Membership atomically
+- [ ] Login / logout / `GET /api/auth/me`
+- [ ] `TenantMiddleware` sets `request.workspace` (I6); rejects requests with no membership
+- [ ] `IsWorkspaceMember`, `IsWorkspaceAdmin` DRF permissions
+- [ ] Invite flow: admin creates → signed token emailed → acceptance sets password + Membership
+- [ ] Member list / role change / remove (admin only)
+- [ ] `templates/base.html`, auth pages, workspace switcher in the shell
+- [ ] Session cookie hardening; CSRF on all dashboard POSTs
+- [ ] `tests/test_tenancy.py` — cross-workspace read and write both denied
+
+**Gate:** Two workspaces created via UI. Workspace A's admin cannot see, modify, or
+enumerate anything in workspace B via any endpoint. Invited agent can log in and is
+correctly denied admin-only actions.
+
+---
+
+## Phase 2 — Inbox core + chat realtime (Days 3–4) ← hardest, do it fresh
+
+Requirement #2 backend + #4 foundation. This phase decides the "Real-time
+Architecture" score.
+
+- [ ] `Contact`, `Conversation`, `Message` models with the exact constraints from
+      `architecture.md` §4 (`unique(conversation, seq)`, `unique(conversation, client_msg_id)`)
+- [ ] Atomic `seq` allocation helper — one `UPDATE ... RETURNING` (I2)
+- [ ] `inbox/services.py`: `get_or_create_conversation`, `post_message`,
+      `assign`, `set_status`, `mark_read` — the only writers
+- [ ] `inbox/consumers.py`: `AgentConsumer` (groups `ws:{workspace}`, `conv:{id}`),
+      `WidgetConsumer` (group `conv:{id}`)
+- [ ] Event envelope `{type, conversation_id, seq, data}` for all seven event types
+- [ ] `static/js/socket.js`: connect, heartbeat, exponential backoff 1s→30s with jitter,
+      gap detection, `?after_seq=` backfill, offline banner
+- [ ] `GET /api/conversations` keyset-paginated; `GET .../messages?after_seq=`
+- [ ] `POST .../messages` idempotent on `client_msg_id`, returns assigned `seq`
+- [ ] Optimistic send + `message.ack` reconciliation in the UI
+- [ ] Typing indicator (throttled, 3s server-side expiry)
+- [ ] Presence (in-process dict, 45s expiry, swept by worker thread)
+- [ ] Read receipts via `agent_last_read_seq` / `contact_last_read_seq`
+- [ ] `tests/test_ordering.py` — concurrent posts produce a dense gap-free seq range
+- [ ] `tests/test_idempotency.py` — same `client_msg_id` twice yields one message
+
+**Gate:** Two browsers, agent and visitor. Kill the network for 30s mid-conversation
+while the other side keeps sending. On reconnect the transcript is complete, in order,
+with no duplicates. Restart the container — full history persists.
+
+---
+
+## Phase 3 — Widget packaging (Day 5)
+
+Requirement #2 delivery surface.
+
+- [ ] `static/widget/loader.js` — the single `<script>` tag, ~2KB, injects the iframe
+- [ ] `templates/widget/frame.html` — the real UI, isolated in the iframe
+- [ ] `GET /api/widget/config?key=` — brand colour, welcome message, online state
+- [ ] `POST /api/widget/session` — signed visitor token, origin allowlist check,
+      optional HMAC identity verification
+- [ ] Visitor token in `localStorage` → returning visitor sees prior conversation
+- [ ] `GET /api/widget/conversation` history restore
+- [ ] Offline state: no agent present → capture email instead of live chat
+- [ ] Rate limit on session create and message post
+- [ ] `demo/index.html` — standalone page with the widget installed **(graded checklist item)**
+- [ ] Mobile-responsive widget
+
+**Gate:** `demo/index.html` served from a different origin loads the widget with one
+script tag, sends a message that appears in the dashboard in under a second, and the
+conversation is still there after closing the browser and returning.
+
+---
+
+## Phase 4 — Email channel (Days 6–7)
+
+Requirement #3. The second-heaviest graded criterion.
+
+- [ ] Mailbox provisioned (Gmail/Zoho app password), catch-all or plus-addressing verified
+- [ ] `mail/poller.py` — IMAP thread, IDLE if available else 30s poll,
+      UID cursor persisted **before** processing (no double-processing on restart)
+- [ ] Raw MIME stored on `Message.raw_mime` for replay/debugging
+- [ ] `mail/threading.py` — resolution in order:
+      1. `In-Reply-To` / `References` → existing `Message.email_message_id`
+      2. plus-address token `support+c{conv}.{hmac8}@`
+      3. same sender + same normalised subject within 7 days
+      4. otherwise new conversation
+- [ ] Quoted-text stripping (`email-reply-parser`), HTML→text fallback
+- [ ] Attachment handling: store metadata, or explicitly skip and document it
+- [ ] `mail/send.py` — SMTP with explicit `Message-ID: <c{conv}.m{msg}@domain>`,
+      `In-Reply-To`, and a growing `References` chain
+- [ ] Inbound email creates/updates `Conversation(channel=email)` and broadcasts
+      `message.created` over WS
+- [ ] Reply from the dashboard sends a normal-looking email
+- [ ] SPF / DKIM / DMARC noted in README (deliverability is graded)
+- [ ] `tests/test_threading.py` — all four resolution paths, plus a reply-to-a-reply
+      staying in one conversation
+
+**Gate:** Send an email from a personal Gmail to the support address → appears as a
+conversation. Reply from the dashboard → arrives in Gmail as a normal threaded reply.
+Reply again from Gmail → lands in the *same* conversation, not a new one. Restart the
+container mid-flight; no message is lost or duplicated.
+
+---
+
+## Phase 5 — Unified inbox UI (Day 8, first half)
+
+Requirement #4.
+
+- [ ] Single list combining chat + email, `channel` badge
+- [ ] Filters: status (open/snoozed/resolved), assignee, channel, free-text search
+- [ ] Assign / reassign, snooze with `snoozed_until`, resolve / reopen
+- [ ] Snooze expiry job (worker thread, every 60s) reopens conversations
+- [ ] `ConversationEvent`-style audit line in the thread for assign/status changes
+      (implemented as `sender_type=system` messages — no extra table)
+- [ ] Live list updates over `ws:{workspace}` — new conversation, new message,
+      assignment change, unread counts
+- [ ] Keyboard-navigable, responsive, empty and loading states
+
+**Gate:** Two agents in the same workspace. One assigns and resolves; the other's list
+updates without refresh. Filters produce correct counts. `EXPLAIN QUERY PLAN` shows an
+index in use for the default list query.
+
+---
+
+## Phase 6 — Knowledge base (Day 8, second half)
+
+Requirement #5.
+
+- [ ] `Category`, `Article` with per-workspace unique slugs
+- [ ] Quill editor via CDN; `bleach` sanitization on write (I7)
+- [ ] Draft / publish states
+- [ ] FTS5 virtual table synced in the service layer; `bm25()` ranking
+- [ ] Public KB pages: index, category, article — server-rendered, tenant from `Host`
+- [ ] Public search endpoint (published only)
+- [ ] `GET /api/widget/kb/suggest?q=` — top 3, called debounced at 400ms as the
+      visitor types in the widget
+- [ ] XSS test: paste `<script>` and an `onerror` payload into an article, confirm neutralised
+
+**Gate:** Article created in the dashboard is publicly readable and searchable. Typing
+a question in the chat widget surfaces relevant articles before the message is sent.
+Injected script payloads do not execute.
+
+---
+
+## Phase 7 — AI summarization (Day 9, first half)
+
+Requirement #6.
+
+- [ ] `core.Job` + `core/worker.py` poller thread (`close_old_connections()` per iteration)
+- [ ] `inbox/prompts.py` — strict JSON schema:
+      `{what_they_want, whats_been_tried, current_status, key_details[]}`
+- [ ] `inbox/ai.py` — context window: first message + last 40, truncated to ~8K tokens,
+      oldest dropped first
+- [ ] Trigger: conversation opened and `last_seq - summary_upto_seq >= 5` → enqueue
+- [ ] 8s timeout, one retry, then deterministic non-LLM fallback with `degraded: true` (I8)
+- [ ] `summary.ready` pushed over WS from the worker thread
+- [ ] Cost/latency/token counts recorded on the Job payload; a management command or
+      admin view to total spend **(answers the "cost awareness" criterion)**
+- [ ] Summary panel in the conversation view with stale/refreshing/degraded states
+
+**Gate:** Open a 30-message conversation → summary appears within seconds and is
+accurate. Add five more messages → it refreshes. Set an invalid API key → the panel
+shows a usable fallback, the UI never hangs, and the failure is logged with the job id.
+
+---
+
+## Phase 8 — Stretch features (Day 9, second half — strictly time-boxed)
+
+Only after phases 0–7 are green. Pick by cost/benefit, cheapest first.
+
+- [ ] Canned responses (one model, `/` shortcut in the composer) — ~1h, high visible value
+- [ ] AI auto-reply drafts (reuses phase 7 pipeline + KB context) — ~1.5h, strong signal
+- [ ] Contact timeline (past conversations, pages visited, last seen — data already captured) — ~1h
+- [ ] SLA tracking (`first_response_at` / `resolved_at` already stored; add targets + breach badge) — ~1h
+- [ ] Analytics dashboard (response time, resolution rate, busiest hours, per-agent) — ~2h
+- [ ] Webhooks/API (outbound HTTP on events via the Job queue + a scoped API key) — ~2h
+
+**Gate:** Anything half-built here is reverted, not shipped. A missing stretch feature
+costs nothing; a broken one costs credibility.
+
+---
+
+## Phase 9 — Custom domains (Day 10, first half)
+
+Requirement #7.
+
+- [ ] `Domain` model with `verify_token`, `verified_at`, `ssl_status`
+- [ ] `POST /api/domains` returns the exact CNAME + TXT records to set
+- [ ] `POST /api/domains/{id}/verify` — `dnspython` resolution check, sets `verified_at`
+- [ ] `GET /api/internal/domain-allowed?domain=` — 200 only for verified domains;
+      not reachable through the public proxy
+- [ ] Caddy `on_demand_tls { ask ... }` wired; cert issues on first request
+- [ ] Host-header → `Domain` → `Workspace` resolution in middleware
+- [ ] UI: add domain, show pending DNS instructions, verified/SSL state
+- [ ] End-to-end demo using `help-demo.<domain>` as a stand-in customer domain
+
+**Gate:** `https://help-demo.<domain>` serves that workspace's KB with a valid
+Let's Encrypt certificate obtained automatically. An unverified hostname is refused
+a certificate.
+
+---
+
+## Phase 10 — Hardening, docs, submission (Day 10, second half)
+
+- [ ] Rate limits on all three public surfaces
+- [ ] Error pages (400/403/404/500) that don't leak internals
+- [ ] `DEBUG=False` verified in prod; `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` correct
+- [ ] Log review: every failure path emits one useful line with ids, no secrets
+- [ ] SQLite backup: nightly `VACUUM INTO` via the worker thread, documented
+- [ ] Full manual pass of the grader's script: sign up → create workspace → test every feature
+- [ ] Seed/demo data command so a fresh grader account isn't staring at an empty inbox
+- [ ] Image build + `docker save` + `docker load` verified on a clean machine
+- [ ] `README.md` complete (see below)
+- [ ] Commit history reviewed — granular, meaningful messages, no single mega-commit
+
+### README must contain
+1. What it is, live URLs, and test credentials
+2. Architecture overview with the topology diagram from `architecture.md`
+3. Tech choices **with reasons** — especially why no Redis/Celery/Postgres
+4. Real-time protocol: seq ordering, gap detection, idempotency, reconnect
+5. Email threading algorithm, all four resolution paths
+6. AI: prompt design, context windowing, cost per summary, fallback behaviour
+7. Custom domain + SSL approach
+8. Setup instructions (local, Docker, image transfer)
+9. **Known Limitations** table — every shortcut, with the production swap named
+10. What was deliberately skipped and why
+
+### Submission checklist (from the assignment)
+- [ ] Live product URL — deployed, functional, signup works
+- [ ] Live chat bubble demo page — separate page, widget installed
+- [ ] Email inbox test — support address routes into the unified inbox with threading
+- [ ] GitHub repository — clean history, README as specified
+- [ ] Message Aditya on the given number with the links
+- [ ] Email the submission to the given address, VP in CC
+
+---
+
+## Risk register
+
+| Risk | Mitigation |
+|---|---|
+| Real-time work overruns and eats email time | Phase 2 is fixed at 2 days; if it slips, cut stretch features, never phase 4 |
+| Free-tier VM reclaimed / rebooted | Data on a mounted volume; `restart: unless-stopped`; nightly `VACUUM INTO` backup pulled off-box |
+| Gmail throttles or flags outbound | 500/day cap is ample; if flagged, swap to Zoho — `send.py` is the only file affected |
+| SQLite write contention under demo load | WAL + `busy_timeout`; single writer path through services; documented as a known limit |
+| `InMemoryChannelLayer` state lost on restart | Only presence/typing are ephemeral; everything else is in the DB and backfilled via `?after_seq=` |
+| Custom-domain cert fails during grading | `help-demo` subdomain pre-provisioned and verified in phase 9, not live-demoed cold |
+| Grader signs up and sees an empty product | Seed command in phase 10 |
+| Scope creep into stretch features | Phase 8 is time-boxed and revertible by rule |
+
+---
+
+## Daily rhythm
+
+Each day: pull the phase gate above, work only on it, and end the day by
+(a) deploying to the VM, (b) updating the README's Known Limitations table with
+anything you shortcut, and (c) committing. A day that ends undeployed is a day of
+unmeasured risk.
