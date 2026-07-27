@@ -37,4 +37,6 @@ Populated as each phase lands; the full scaling-seam table lives in `architectur
 
 | Limitation | Why | Production swap |
 |---|---|---|
-| _populated per phase_ | | |
+| Invite emails print to the console, not real inboxes | SMTP lands in Phase 4 | Set `EMAIL_BACKEND` to the SMTP backend (the invite link is also shown in the UI meanwhile) |
+| Invite token is stored raw and travels in the accept URL | POC simplicity; token is single-use + expires (default 7 days) | Hash the token at rest; keep the TTL/single-use guarantees |
+| Rate limiting not yet applied to auth endpoints | Deferred to Phase 10 | In-memory token bucket per IP (per `CLAUDE.md` §7) |

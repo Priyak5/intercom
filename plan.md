@@ -44,16 +44,16 @@ pending the deploy handoff.)_
 
 Requirement #1.
 
-- [ ] `User` (email login, `USERNAME_FIELD = "email"`), `Workspace`, `Membership`, `Invite`
-- [ ] Signup creates User + Workspace + admin Membership atomically
-- [ ] Login / logout / `GET /api/auth/me`
-- [ ] `TenantMiddleware` sets `request.workspace` (I6); rejects requests with no membership
-- [ ] `IsWorkspaceMember`, `IsWorkspaceAdmin` DRF permissions
-- [ ] Invite flow: admin creates → signed token emailed → acceptance sets password + Membership
-- [ ] Member list / role change / remove (admin only)
-- [ ] `templates/base.html`, auth pages, workspace switcher in the shell
-- [ ] Session cookie hardening; CSRF on all dashboard POSTs
-- [ ] `tests/test_tenancy.py` — cross-workspace read and write both denied
+- [x] `User` (email login, `USERNAME_FIELD = "email"`), `Workspace`, `Membership`, `Invite`
+- [x] Signup creates User + Workspace + admin Membership atomically
+- [x] Login / logout / `GET /api/auth/me`
+- [x] `TenantMiddleware` sets `request.workspace` (I6); rejects requests with no membership
+- [x] `IsWorkspaceMember`, `IsWorkspaceAdmin` DRF permissions
+- [x] Invite flow: admin creates → token emailed (console backend + link in UI; SMTP is Phase 4) → acceptance sets password + Membership
+- [x] Member list / role change / remove (admin only)
+- [x] `templates/base.html`, auth pages, workspace switcher in the shell
+- [x] Session cookie hardening; CSRF on all dashboard POSTs (DRF SessionAuthentication + form tokens)
+- [x] `tests/test_tenancy.py` — cross-workspace read and write both denied (9/9 green on Py3.12)
 
 **Gate:** Two workspaces created via UI. Workspace A's admin cannot see, modify, or
 enumerate anything in workspace B via any endpoint. Invited agent can log in and is
