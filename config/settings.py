@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "channels",
+    "rest_framework",
     "apps.core",
     "apps.accounts",
 ]
@@ -77,6 +78,8 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Derives request.workspace/membership; needs request.user, so it follows auth (I6).
+    "apps.core.middleware.TenantMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -94,6 +97,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "apps.accounts.context.workspace_context",
             ],
         },
     },
@@ -174,6 +178,36 @@ SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_HTTPONLY = False  # JS reads the CSRF cookie for fetch() headers.
 CSRF_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SECURE = not DEBUG
+
+
+# --- auth / DRF -------------------------------------------------------------
+
+LOGIN_URL = "login"
+LOGIN_REDIRECT_URL = "dashboard"
+LOGOUT_REDIRECT_URL = "login"
+
+REST_FRAMEWORK = {
+    # Dashboard is session-cookie authenticated; SessionAuthentication also enforces
+    # CSRF on unsafe methods for us. Widget token auth arrives in Phase 3.
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    # Default deny: every API view requires auth unless it opts out with AllowAny.
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+    # Maps typed service-layer exceptions (core.exceptions) to status codes (I5).
+    "EXCEPTION_HANDLER": "apps.core.exceptions.drf_exception_handler",
+}
+
+
+# --- email / invites --------------------------------------------------------
+
+# Console backend logs invite emails to stdout; the invite link is also surfaced in
+# the team UI. Swaps to real SMTP in Phase 4 by setting EMAIL_BACKEND in the env.
+EMAIL_BACKEND = env("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "support@localhost")
+INVITE_TTL_HOURS = int(env("INVITE_TTL_HOURS", "168"))  # 7 days
 
 
 # --- logging ----------------------------------------------------------------
