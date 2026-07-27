@@ -1,0 +1,14 @@
+{% extends "accounts/auth_base.html" %}
+{% block title %}Sign up{% endblock %}
+{% block content %}
+<h2>Create your workspace</h2>
+<form method="post" action="{% url 'signup' %}">
+  {% csrf_token %}
+  <label>Your name<input name="name" value="{{ form.name|default:'' }}"></label>
+  <label>Email<input type="email" name="email" value="{{ form.email|default:'' }}" required></label>
+  <label>Password<input type="password" name="password" required></label>
+  <label>Workspace name<input name="workspace_name" value="{{ form.workspace_name|default:'' }}" required></label>
+  <button type="submit">Create workspace</button>
+</form>
+<p class="muted">Already have an account? <a href="{% url 'login' %}">Log in</a></p>
+{% endblock %}

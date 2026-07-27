@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+{% if current_workspace %}
+<h2>{{ current_workspace.name }}</h2>
+<p>Signed in as {{ user.email }} ({{ current_membership.role }}).</p>
+<p class="muted">The unified inbox arrives in Phase 2. For now:</p>
+{% if current_membership.role == 'admin' %}
+<p><a class="btn" href="{% url 'team' %}">Manage team →</a></p>
+{% endif %}
+{% else %}
+<h2>No workspace</h2>
+<p class="muted">You don't belong to a workspace yet.</p>
+{% endif %}
+{% endblock %}

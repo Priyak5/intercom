@@ -1,0 +1,12 @@
+{% extends "accounts/auth_base.html" %}
+{% block title %}Log in{% endblock %}
+{% block content %}
+<h2>Log in</h2>
+<form method="post" action="{% url 'login' %}">
+  {% csrf_token %}
+  <label>Email<input type="email" name="email" value="{{ form.email|default:'' }}" required autofocus></label>
+  <label>Password<input type="password" name="password" required></label>
+  <button type="submit">Log in</button>
+</form>
+<p class="muted">No account? <a href="{% url 'signup' %}">Create a workspace</a></p>
+{% endblock %}

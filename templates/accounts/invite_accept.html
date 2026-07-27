@@ -1,0 +1,18 @@
+{% extends "accounts/auth_base.html" %}
+{% block title %}Accept invite{% endblock %}
+{% block content %}
+{% if invalid %}
+<h2>Invite unavailable</h2>
+<p class="muted">This invitation link is invalid, expired, or already used.</p>
+<p><a href="{% url 'login' %}">Go to log in</a></p>
+{% else %}
+<h2>Join {{ invite.workspace.name }}</h2>
+<p class="muted">Invited as <strong>{{ invite.email }}</strong> ({{ invite.role }}).</p>
+<form method="post">
+  {% csrf_token %}
+  <label>Your name<input name="name"></label>
+  <label>Set a password<input type="password" name="password" required></label>
+  <button type="submit">Accept &amp; join</button>
+</form>
+{% endif %}
+{% endblock %}

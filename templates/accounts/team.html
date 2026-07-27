@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Team{% endblock %}
+{% block content %}
+<h2>Team — {{ current_workspace.name }}</h2>
+
+{% if is_admin %}
+<section class="invite">
+  <h3>Invite a teammate</h3>
+  <form id="invite-form" class="row">
+    <input type="email" id="invite-email" placeholder="teammate@example.com" required>
+    <select id="invite-role">
+      {% for value, label in roles %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+    </select>
+    <button type="submit">Send invite</button>
+  </form>
+  <p id="invite-result" class="muted"></p>
+</section>
+{% endif %}
+
+<table class="members" id="members-table">
+  <thead>
+    <tr><th>Email</th><th>Name</th><th>Role</th><th>Joined</th>{% if is_admin %}<th></th>{% endif %}</tr>
+  </thead>
+  <tbody>
+    {% for m in members %}
+    <tr data-id="{{ m.id }}">
+      <td>{{ m.user.email }}</td>
+      <td>{{ m.user.name }}</td>
+      <td>
+        {% if is_admin %}
+        <select class="role-select" data-id="{{ m.id }}">
+          {% for value, label in roles %}<option value="{{ value }}"{% if m.role == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        {% else %}{{ m.role }}{% endif %}
+      </td>
+      <td>{{ m.created_at|date:"Y-m-d" }}</td>
+      {% if is_admin %}<td><button class="remove-btn" data-id="{{ m.id }}">Remove</button></td>{% endif %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+{% block extra_js %}<script src="{% static 'js/team.js' %}"></script>{% endblock %}

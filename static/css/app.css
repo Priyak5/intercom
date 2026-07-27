@@ -1,0 +1,68 @@
+:root {
+  --bg: #f6f7f9;
+  --fg: #1f2430;
+  --muted: #6b7280;
+  --border: #e2e5ea;
+  --accent: #2f6fed;
+  --danger: #d64545;
+  --ok: #2f8f4e;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+/* --- shell --- */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem 1.2rem;
+  background: #fff;
+  border-bottom: 1px solid var(--border);
+}
+.brand { font-weight: 700; text-decoration: none; color: var(--fg); }
+.topnav { margin-left: auto; display: flex; align-items: center; gap: 1rem; }
+.topnav a { color: var(--accent); text-decoration: none; }
+.who { color: var(--muted); font-size: 0.9em; }
+.inline { display: inline; }
+.switcher select { padding: 0.3rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; }
+.content { max-width: 880px; margin: 1.5rem auto; padding: 0 1.2rem; }
+
+/* --- auth pages --- */
+body.auth { display: flex; min-height: 100vh; align-items: center; justify-content: center; }
+.auth-card {
+  width: 360px; background: #fff; padding: 1.6rem 1.8rem;
+  border: 1px solid var(--border); border-radius: 12px;
+}
+.auth-card h1.brand { margin: 0 0 1rem; }
+
+/* --- forms --- */
+label { display: block; margin: 0.6rem 0; font-size: 0.9em; color: var(--muted); }
+input, select { width: 100%; padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; font: inherit; }
+.row { display: flex; gap: 0.5rem; align-items: center; }
+.row input, .row select { width: auto; }
+button, .btn {
+  display: inline-block; margin-top: 0.6rem; padding: 0.5rem 0.9rem;
+  background: var(--accent); color: #fff; border: 0; border-radius: 6px;
+  font: inherit; cursor: pointer; text-decoration: none;
+}
+button:hover, .btn:hover { filter: brightness(0.95); }
+.remove-btn { background: var(--danger); margin: 0; }
+
+/* --- team table --- */
+table.members { width: 100%; border-collapse: collapse; margin-top: 1rem; background: #fff; }
+table.members th, table.members td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--border); }
+table.members th { font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); }
+.invite { margin: 1rem 0; padding: 1rem; background: #fff; border: 1px solid var(--border); border-radius: 10px; }
+
+/* --- flashes --- */
+.flashes { list-style: none; margin: 0.8rem auto; padding: 0; max-width: 880px; }
+.flash { padding: 0.6rem 0.9rem; border-radius: 6px; margin-bottom: 0.4rem; }
+.flash.error { background: #fdecec; color: var(--danger); }
+.flash.success { background: #eaf6ee; color: var(--ok); }
+.muted { color: var(--muted); }

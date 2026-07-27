@@ -1,0 +1,47 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Support{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{% url 'dashboard' %}">Support</a>
+    {% if user.is_authenticated %}
+    <nav class="topnav">
+      {% if user_memberships %}
+      <form method="post" action="{% url 'workspace_switch' %}" class="switcher">
+        {% csrf_token %}
+        <select name="workspace_id" onchange="this.form.submit()" aria-label="Workspace">
+          {% for m in user_memberships %}
+          <option value="{{ m.workspace_id }}"{% if current_workspace and m.workspace_id == current_workspace.id %} selected{% endif %}>{{ m.workspace.name }} ({{ m.role }})</option>
+          {% endfor %}
+        </select>
+      </form>
+      {% endif %}
+      {% if current_membership and current_membership.role == 'admin' %}
+      <a href="{% url 'team' %}">Team</a>
+      {% endif %}
+      <span class="who">{{ user.email }}</span>
+      <form method="post" action="{% url 'logout' %}" class="inline">{% csrf_token %}<button type="submit">Log out</button></form>
+    </nav>
+    {% endif %}
+  </header>
+
+  {% if messages %}
+  <ul class="flashes">
+    {% for message in messages %}<li class="flash {{ message.tags }}">{{ message }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+
+  <main class="content">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="{% static 'js/app.js' %}"></script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>
