@@ -1,0 +1,8 @@
+# Phase 0 runtime. Pinned. Grows one logical dependency at a time, each justified in
+# architecture.md §3 (CLAUDE.md rule). DRF, bleach, anthropic, IMAP/SMTP, dnspython,
+# email-reply-parser, etc. arrive in their own phases.
+Django==5.1.4
+channels==4.1.0
+uvicorn[standard]==0.32.1
+python-dotenv==1.0.1
+whitenoise==6.8.2
