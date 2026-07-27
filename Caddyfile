@@ -1,0 +1,8 @@
+# Phase 0: the known app subdomain only. Caddy obtains a real Let's Encrypt cert
+# automatically on first HTTPS request. Custom-domain on-demand TLS (the
+# `on_demand_tls { ask ... }` block + `:443 { tls { on_demand } }`) is added in
+# Phase 9 — see architecture.md §10.
+
+app.{$BASE_DOMAIN} {
+	reverse_proxy app:8000
+}
