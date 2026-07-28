@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "apps.core",
     "apps.accounts",
+    "apps.inbox",
 ]
 
 MIDDLEWARE = [
@@ -125,6 +126,9 @@ DATABASES = {
         "NAME": DATA_DIR / "db.sqlite3",
         # busy_timeout is also set via PRAGMA, but Django's own lock wait should match.
         "OPTIONS": {"timeout": 5},
+        # File-based test DB (not :memory:) so the transactional concurrency tests, whose
+        # worker threads each open their own connection, share one database.
+        "TEST": {"NAME": str(DATA_DIR / "test_db.sqlite3")},
     }
 }
 # WAL / synchronous / foreign_keys / busy_timeout pragmas are applied to *every*
@@ -208,6 +212,9 @@ REST_FRAMEWORK = {
 EMAIL_BACKEND = env("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "support@localhost")
 INVITE_TTL_HOURS = int(env("INVITE_TTL_HOURS", "168"))  # 7 days
+
+# Widget visitor-session token lifetime (Phase 2 minimal surface; Phase 3 hardens it).
+WIDGET_TOKEN_TTL_HOURS = int(env("WIDGET_TOKEN_TTL_HOURS", "24"))
 
 
 # --- logging ----------------------------------------------------------------
