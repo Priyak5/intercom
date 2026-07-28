@@ -40,3 +40,8 @@ Populated as each phase lands; the full scaling-seam table lives in `architectur
 | Invite emails print to the console, not real inboxes | SMTP lands in Phase 4 | Set `EMAIL_BACKEND` to the SMTP backend (the invite link is also shown in the UI meanwhile) |
 | Invite token is stored raw and travels in the accept URL | POC simplicity; token is single-use + expires (default 7 days) | Hash the token at rest; keep the TTL/single-use guarantees |
 | Rate limiting not yet applied to auth endpoints | Deferred to Phase 10 | In-memory token bucket per IP (per `CLAUDE.md` §7) |
+| Concurrent posts with the *same* `client_msg_id` can skip one seq value | The idempotency loser burns a seq before losing the unique race | Harmless — the client heals the gap via `?after_seq=` backfill; the alternative (insert-first) leaks rows |
+| Sync WebSocket consumers cap concurrent in-flight WS messages at the ASGI threadpool size | Sync consumers keep the service layer un-colored and correct | Async consumers + `database_sync_to_async`, or the Redis channel layer + N replicas |
+| Presence/typing are lost on restart | In-process dicts, swept by the sweeper thread | Redis `SETEX` keys (architecture §11) — everything else is in the DB and backfilled |
+| `message.ack` rides the HTTP POST response, not a WS frame | Sends go over idempotent REST (I3); the response carries the assigned seq | n/a — documented design choice |
+| Minimal visitor surface lives inside `apps/inbox` (no iframe/loader/origin-allowlist/rate-limits) | Phase 2 needs a testable visitor; the real widget is Phase 3 | Phase 3 promotes it to `apps/widget` |
