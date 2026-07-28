@@ -1,0 +1,52 @@
+{% extends "admin/base_site.html" %}
+{% block title %}AI summary spend{% endblock %}
+{% block content %}
+<h1>AI summary spend</h1>
+<p style="color:#666">
+  Model: <code>{{ model }}</code> ·
+  Input: ${{ input_price }} / 1M tokens ·
+  Output: ${{ output_price }} / 1M tokens
+</p>
+
+<h2>Totals</h2>
+<table style="border-collapse:collapse">
+  <tr><th style="text-align:left;padding:0.3rem 1rem">Jobs</th><td>{{ totals.jobs }} ({{ totals.degraded }} degraded)</td></tr>
+  <tr><th style="text-align:left;padding:0.3rem 1rem">Input tokens</th><td>{{ totals.input_tokens }}</td></tr>
+  <tr><th style="text-align:left;padding:0.3rem 1rem">Output tokens</th><td>{{ totals.output_tokens }}</td></tr>
+  <tr><th style="text-align:left;padding:0.3rem 1rem">Total USD</th><td>${{ totals.usd|floatformat:4 }}</td></tr>
+</table>
+
+<h2>Per workspace / per day</h2>
+{% if rows %}
+<table style="border-collapse:collapse;margin-top:1rem">
+  <thead>
+    <tr>
+      <th style="text-align:left;padding:0.3rem 0.6rem">Day</th>
+      <th style="text-align:left;padding:0.3rem 0.6rem">Workspace</th>
+      <th style="text-align:right;padding:0.3rem 0.6rem">Jobs</th>
+      <th style="text-align:right;padding:0.3rem 0.6rem">Degraded</th>
+      <th style="text-align:right;padding:0.3rem 0.6rem">Input tok</th>
+      <th style="text-align:right;padding:0.3rem 0.6rem">Output tok</th>
+      <th style="text-align:right;padding:0.3rem 0.6rem">USD</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td style="padding:0.3rem 0.6rem">{{ r.day|date:"Y-m-d" }}</td>
+      <td style="padding:0.3rem 0.6rem">{{ r.conversation__workspace__slug|default:"—" }}</td>
+      <td style="padding:0.3rem 0.6rem;text-align:right">{{ r.jobs }}</td>
+      <td style="padding:0.3rem 0.6rem;text-align:right">{{ r.degraded }}</td>
+      <td style="padding:0.3rem 0.6rem;text-align:right">{{ r.input_tokens }}</td>
+      <td style="padding:0.3rem 0.6rem;text-align:right">{{ r.output_tokens }}</td>
+      <td style="padding:0.3rem 0.6rem;text-align:right">${{ r.usd|floatformat:4 }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p style="color:#666">No summary jobs yet.</p>
+{% endif %}
+
+<p><a href="../">← Back to summary jobs</a></p>
+{% endblock %}

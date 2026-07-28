@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Knowledge base{% endblock %}
+{% block content %}
+<div class="kb-admin-toolbar">
+  <h1>Knowledge base</h1>
+  <div class="kb-admin-actions">
+    <a class="btn" href="{% url 'kb_admin_new' %}">New article</a>
+    <a href="{% url 'kb_admin_categories' %}">Categories</a>
+    {% if current_workspace %}
+    <a href="{% url 'kb_public_index' slug=current_workspace.slug %}" target="_blank" rel="noopener">View public site ↗</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if articles %}
+<table class="kb-admin-table">
+  <thead>
+    <tr><th>Title</th><th>Category</th><th>Status</th><th>Updated</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for a in articles %}
+    <tr>
+      <td><a href="{% url 'kb_admin_edit' article_id=a.id %}">{{ a.title }}</a></td>
+      <td class="muted">{{ a.category.name|default:"—" }}</td>
+      <td>
+        {% if a.is_published %}<span class="kb-badge published">Published</span>
+        {% else %}<span class="kb-badge draft">Draft</span>{% endif %}
+      </td>
+      <td class="muted">{{ a.updated_at|date:"Y-m-d H:i" }}</td>
+      <td>
+        <form method="post" action="{% url 'kb_admin_delete' article_id=a.id %}" class="inline"
+              onsubmit="return confirm('Delete this article?')">
+          {% csrf_token %}<button type="submit" class="remove-btn">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No articles yet. <a href="{% url 'kb_admin_new' %}">Write the first one</a>.</p>
+{% endif %}
+{% endblock %}

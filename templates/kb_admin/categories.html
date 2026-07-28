@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}KB categories{% endblock %}
+{% block content %}
+<p><a href="{% url 'kb_admin_list' %}">← Back to knowledge base</a></p>
+<h1>Categories</h1>
+
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+
+<div class="invite">
+  <form method="post">
+    {% csrf_token %}
+    <label>New category
+      <input type="text" name="name" placeholder="e.g. Billing" required autocomplete="off">
+    </label>
+    <button type="submit">Add</button>
+  </form>
+</div>
+
+{% if categories %}
+<table class="members">
+  <thead><tr><th>Name</th><th>Slug</th><th></th></tr></thead>
+  <tbody>
+    {% for c in categories %}
+    <tr>
+      <td>{{ c.name }}</td>
+      <td class="muted">{{ c.slug }}</td>
+      <td>
+        <form method="post" action="{% url 'kb_admin_category_delete' category_id=c.id %}"
+              onsubmit="return confirm('Delete this category? Articles become uncategorised.')" class="inline">
+          {% csrf_token %}<button type="submit" class="remove-btn">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No categories yet.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "public_kb/base.html" %}
+{% block title %}{{ category.name }} — {{ workspace.name }} help{% endblock %}
+{% block content %}
+<p><a href="{% url 'kb_public_index' slug=workspace.slug %}">← All topics</a></p>
+<h1 class="pk-h1">{{ category.name }}</h1>
+{% if articles %}
+<ul class="pk-article-list">
+  {% for a in articles %}
+  <li><a href="{% url 'kb_public_article' slug=workspace.slug article_slug=a.slug %}">{{ a.title }}</a></li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">Nothing published in this category yet.</p>
+{% endif %}
+{% endblock %}

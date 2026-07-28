@@ -14,3 +14,9 @@ pytest-django==4.9.0
 # stripping. SMTP goes through stdlib smtplib directly (no Django mail backend).
 IMAPClient==3.0.1
 email-reply-parser==0.5.12
+# Phase 6: KB article HTML sanitisation (CLAUDE.md I7). Runs bleach.clean() on write
+# so templates can render body_html with |safe. FTS5 is SQLite-native (no dep).
+bleach==6.2.0
+# Phase 7: Claude summarisation via Anthropic SDK. Hard 8s timeout + one retry then
+# a deterministic non-LLM fallback keeps the UI never-hanging (CLAUDE.md I8).
+anthropic==0.42.0

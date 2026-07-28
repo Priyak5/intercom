@@ -46,6 +46,10 @@ class ConversationSerializer(serializers.Serializer):
     contact_name = serializers.SerializerMethodField()
     contact_email = serializers.SerializerMethodField()
     unread = serializers.SerializerMethodField()
+    summary = serializers.CharField(allow_blank=True)
+    summary_upto_seq = serializers.IntegerField()
+    summary_generated_at = serializers.DateTimeField(allow_null=True)
+    summary_degraded = serializers.BooleanField()
 
     def get_contact_name(self, obj):
         return obj.contact.name or obj.contact.email or "Visitor"
@@ -146,9 +150,23 @@ class MessageListCreateView(APIView):
             return Response({"error": "not_found"}, status=404)
         after_seq = int(request.query_params.get("after_seq", 0) or 0)
         msgs = conv.messages.filter(seq__gt=after_seq).order_by("seq")
+        # Piggy-back the summary on the open-thread fetch so the client renders
+        # the card without a second round-trip. `stale=True` when the summary
+        # doesn't yet cover the tail messages.
+        from django.conf import settings
+
+        threshold = getattr(settings, "AI_ENQUEUE_THRESHOLD", 5)
+        summary_block = {
+            "summary": conv.summary,
+            "upto_seq": conv.summary_upto_seq,
+            "generated_at": conv.summary_generated_at.isoformat() if conv.summary_generated_at else None,
+            "degraded": conv.summary_degraded,
+            "stale": (conv.last_seq - conv.summary_upto_seq) >= threshold,
+        }
         return Response(
             {"conversation_id": str(conv.id), "last_seq": conv.last_seq,
-             "results": MessageSerializer(msgs, many=True).data}
+             "results": MessageSerializer(msgs, many=True).data,
+             "summary": summary_block}
         )
 
     def post(self, request, conversation_id):
@@ -228,4 +246,28 @@ class StatusView(APIView):
                 "status": conv.status,
                 "snoozed_until": conv.snoozed_until.isoformat() if conv.snoozed_until else None,
             }
+        )
+
+
+class SummaryRefreshView(APIView):
+    """POST /api/conversations/<id>/summary/refresh — force-enqueue a summary job
+    even if the message-delta hasn't crossed AI_ENQUEUE_THRESHOLD. Used by the
+    "Refresh" button in the summary card.
+    """
+
+    permission_classes = [IsWorkspaceMember]
+
+    def post(self, request, conversation_id):
+        conv = _get_conversation(request, conversation_id)
+        if conv is None:
+            return Response({"error": "not_found"}, status=404)
+        from apps.inbox import ai
+
+        job = ai.enqueue_summary(conversation=conv, force=True)
+        return Response(
+            {
+                "enqueued": job is not None,
+                "job_id": str(job.id) if job is not None else None,
+            },
+            status=202 if job is not None else 200,
         )

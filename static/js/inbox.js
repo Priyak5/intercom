@@ -22,6 +22,10 @@
   var snoozeMenu = document.getElementById("snooze-menu");
   var snoozeCustom = document.getElementById("snooze-custom");
   var resolveBtn = document.getElementById("resolve-btn");
+  var summaryCard = document.getElementById("summary-card");
+  var summaryBody = document.getElementById("summary-body");
+  var summaryMeta = document.getElementById("summary-meta");
+  var summaryRefresh = document.getElementById("summary-refresh");
   if (!convListEl) return;
 
   var api = window.api;
@@ -49,7 +53,13 @@
       if (!currentConv) return Promise.resolve({ results: [] });
       return api
         .apiFetch("/api/conversations/" + currentConv + "/messages?after_seq=" + afterSeq, "GET")
-        .then(function (r) { return r.data || { results: [] }; });
+        .then(function (r) {
+          var data = r.data || { results: [] };
+          // Piggy-back: the messages endpoint returns the summary too; render it
+          // on the open-thread fetch (afterSeq=0) so agents see it immediately.
+          if (afterSeq === 0 && data.summary) renderSummary(data.summary);
+          return data;
+        });
     },
     onEvent: onEvent,
   });
@@ -65,6 +75,7 @@
     else if (type === "conversation.updated") loadConversations();
     else if (type === "typing") showTyping(data);
     else if (type === "presence.updated") showPresence(data);
+    else if (type === "summary.ready") renderSummary(data);
   }
 
   function showPresence(data) {
@@ -218,6 +229,11 @@
     currentConvMeta = c;
     byClient = {};
     threadEl.innerHTML = "";
+    // Hide any previous summary; backfill (afterSeq=0) will re-populate.
+    summaryCard.hidden = true;
+    summaryBody.innerHTML = "";
+    summaryMeta.textContent = "";
+    summaryMeta.className = "summary-meta";
     var title = c.contact_name || "Conversation";
     if (c.channel === "email") {
       var subj = c.subject ? " — " + c.subject : "";
@@ -431,4 +447,68 @@
     if (typingTimer) clearTimeout(typingTimer);
     typingTimer = setTimeout(function () { typingEl.textContent = ""; }, 3000);
   }
+
+  // --- summary card ---------------------------------------------------------
+  //
+  // Data shape (from either the /messages open fetch or a summary.ready WS event):
+  //   { summary: "<json string>", upto_seq: int, generated_at: iso|null,
+  //     degraded: bool, stale?: bool }
+  // The `summary` field is JSON with the schema locked in prompts.py.
+
+  function renderSummary(data) {
+    if (!data || !data.summary) {
+      // No summary yet — hide the card. The worker will fill it in shortly.
+      summaryCard.hidden = true;
+      return;
+    }
+    var parsed = null;
+    try { parsed = JSON.parse(data.summary); } catch (e) { parsed = null; }
+    if (!parsed) { summaryCard.hidden = true; return; }
+
+    var sections = [
+      { label: "What they want", value: parsed.what_they_want || "" },
+      { label: "What's been tried", value: parsed.whats_been_tried || "" },
+      { label: "Current status", value: parsed.current_status || "" },
+    ];
+    var html = "";
+    for (var i = 0; i < sections.length; i++) {
+      if (!sections[i].value) continue;
+      html += '<div class="summary-section">' +
+              '<div class="summary-label">' + api.escapeHtml(sections[i].label) + "</div>" +
+              '<div class="summary-value">' + api.escapeHtml(sections[i].value) + "</div>" +
+              "</div>";
+    }
+    if (parsed.key_details && parsed.key_details.length) {
+      html += '<div class="summary-section">' +
+              '<div class="summary-label">Key details</div><ul class="summary-list">';
+      for (var j = 0; j < parsed.key_details.length; j++) {
+        html += '<li>' + api.escapeHtml(String(parsed.key_details[j])) + '</li>';
+      }
+      html += '</ul></div>';
+    }
+    if (!html) { summaryCard.hidden = true; return; }
+    summaryBody.innerHTML = html;
+
+    // Meta / badges. Precedence: degraded > stale > fresh.
+    summaryMeta.className = "summary-meta";
+    var when = data.generated_at ? shortTime(data.generated_at) : "";
+    if (data.degraded) {
+      summaryMeta.classList.add("badge-degraded");
+      summaryMeta.textContent = "Basic summary — AI unavailable" + (when ? " · " + when : "");
+    } else if (data.stale) {
+      summaryMeta.classList.add("badge-stale");
+      summaryMeta.textContent = "Refreshing…" + (when ? " · last " + when : "");
+    } else {
+      summaryMeta.textContent = when ? "Generated " + when : "";
+    }
+    summaryCard.hidden = false;
+  }
+
+  summaryRefresh.addEventListener("click", function () {
+    if (!currentConv) return;
+    summaryMeta.className = "summary-meta badge-refreshing";
+    summaryMeta.textContent = "Refreshing…";
+    api.apiFetch("/api/conversations/" + currentConv + "/summary/refresh", "POST");
+    // Worker will broadcast summary.ready when it's done.
+  });
 })();

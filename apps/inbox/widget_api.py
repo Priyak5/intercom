@@ -178,6 +178,36 @@ class WidgetConversationView(_WidgetView):
         )
 
 
+class WidgetKbSuggestView(_WidgetView):
+    """Widget-visible KB search. Token-authed so the workspace derives from the token
+    (I6): a stolen public_key cannot enumerate a workspace's KB by hitting this endpoint
+    without also holding a valid signed session.
+    """
+
+    def get(self, request):
+        conv = _resolve_conversation(request)
+        if conv is None:
+            return Response({"error": "unauthorized"}, status=401)
+        q = (request.query_params.get("q") or "").strip()
+        if len(q) < 2:
+            return Response({"results": []})
+
+        from apps.kb import search as kb_search
+
+        articles = kb_search.search(workspace=conv.workspace, q=q, published_only=True, limit=3)
+        results = [
+            {
+                "id": str(a.id),
+                "title": a.title,
+                "slug": a.slug,
+                "url": f"/kb/{conv.workspace.slug}/a/{a.slug}/",
+                "snippet": kb_search.snippet(a, q),
+            }
+            for a in articles
+        ]
+        return Response({"results": results})
+
+
 class WidgetMessagesView(_WidgetView):
     def get(self, request):
         conv = _resolve_conversation(request)

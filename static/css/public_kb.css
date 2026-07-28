@@ -1,0 +1,59 @@
+/* Public knowledge base — chromeless from the dashboard, brand-tinted header. */
+
+.pk-body { background: #fafbfd; color: #1f2430; }
+.pk-head { background: var(--pk-brand, #2563eb); color: #fff; padding: 1.6rem 1.2rem; }
+.pk-head-inner {
+  max-width: 880px; margin: 0 auto;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.pk-brand { color: #fff; text-decoration: none; font-weight: 600; font-size: 1.1rem; }
+.pk-search input {
+  width: 260px; padding: 0.45rem 0.7rem;
+  background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25);
+  color: #fff; border-radius: 6px;
+}
+.pk-search input::placeholder { color: rgba(255,255,255,0.75); }
+.pk-search input:focus { outline: none; background: rgba(255,255,255,0.25); }
+
+.pk-main { max-width: 880px; margin: 2rem auto; padding: 0 1.2rem; }
+.pk-h1 { font-size: 2rem; margin: 0.4rem 0 1rem; }
+.pk-h2 { font-size: 1.2rem; margin: 2rem 0 0.5rem; }
+
+.pk-categories { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+.pk-cat-card {
+  display: block; padding: 1rem 1.2rem; background: #fff; border: 1px solid #e2e5ea;
+  border-radius: 10px; text-decoration: none; color: inherit;
+  transition: box-shadow 120ms ease;
+}
+.pk-cat-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.06); }
+.pk-cat-name { font-weight: 600; margin-bottom: 0.2rem; }
+
+.pk-article-list { list-style: none; padding: 0; margin: 0; }
+.pk-article-list li { padding: 0.6rem 0; border-bottom: 1px solid #e2e5ea; }
+.pk-article-list li:last-child { border-bottom: 0; }
+
+.pk-crumbs { font-size: 0.9em; margin-bottom: 0.6rem; }
+.pk-crumbs a { color: inherit; }
+.pk-article { background: #fff; padding: 2rem; border: 1px solid #e2e5ea; border-radius: 10px; }
+.pk-meta { margin: 0 0 1rem; font-size: 0.85em; }
+.pk-body p, .pk-body ul, .pk-body ol, .pk-body blockquote { margin: 0.5rem 0; }
+.pk-body h1, .pk-body h2, .pk-body h3 { margin: 1.2rem 0 0.4rem; }
+.pk-body pre { background: #f2f4f8; padding: 0.6rem 0.8rem; border-radius: 6px; overflow-x: auto; }
+.pk-body code { background: #f2f4f8; padding: 0.05rem 0.3rem; border-radius: 4px; }
+.pk-body a { color: var(--pk-brand, #2563eb); }
+.pk-body img { max-width: 100%; height: auto; border-radius: 6px; }
+.pk-body blockquote { border-left: 3px solid var(--pk-brand, #2563eb); padding: 0.2rem 0.8rem; color: #4b5563; }
+
+.pk-snippet { margin-top: 0.2rem; font-size: 0.9em; }
+
+.pk-foot { max-width: 880px; margin: 3rem auto 2rem; padding: 0 1.2rem; text-align: center; }
+
+/* Admin table extras — small, lives in app.css already so this file only adds */
+.kb-admin-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+.kb-admin-actions { display: flex; gap: 0.8rem; align-items: center; }
+.kb-admin-table { width: 100%; border-collapse: collapse; background: #fff; }
+.kb-admin-table th, .kb-admin-table td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid #e2e5ea; }
+.kb-admin-table th { font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.03em; color: #6b7280; }
+.kb-badge { display: inline-block; padding: 0.05rem 0.5rem; border-radius: 10px; font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.04em; }
+.kb-badge.published { background: #eaf6ee; color: #2f8f4e; }
+.kb-badge.draft { background: #fff4e5; color: #8a5a00; }

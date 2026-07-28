@@ -195,15 +195,18 @@ index in use for the default list query.
 
 Requirement #5.
 
-- [ ] `Category`, `Article` with per-workspace unique slugs
-- [ ] Quill editor via CDN; `bleach` sanitization on write (I7)
-- [ ] Draft / publish states
-- [ ] FTS5 virtual table synced in the service layer; `bm25()` ranking
-- [ ] Public KB pages: index, category, article — server-rendered, tenant from `Host`
-- [ ] Public search endpoint (published only)
-- [ ] `GET /api/widget/kb/suggest?q=` — top 3, called debounced at 400ms as the
+- [x] `Category`, `Article` with per-workspace unique slugs
+- [x] Quill editor via CDN; `bleach` sanitization on write (I7)
+- [x] Draft / publish states (boolean `is_published` + `published_at`; no archived)
+- [x] FTS5 virtual table synced via SQL triggers (migration 0002); `bm25(10,1,3)` ranking
+- [x] Public KB pages: index, category, article — server-rendered, tenant from URL
+      slug (`/kb/<slug>/…`); Phase 9 layers Host-header resolution on top
+- [x] Public search endpoint (published only) — `/kb/<slug>/search?q=…`
+- [x] `GET /api/widget/kb/suggest?q=` — top 3, called debounced at 400ms as the
       visitor types in the widget
-- [ ] XSS test: paste `<script>` and an `onerror` payload into an article, confirm neutralised
+- [x] XSS test: `<script>` + `onerror` + `javascript:` + `<iframe>` payloads
+      neutralised (`tests/test_kb_xss.py`, 11 parametrised cases + end-to-end
+      public rendering check)
 
 **Gate:** Article created in the dashboard is publicly readable and searchable. Typing
 a question in the chat widget surfaces relevant articles before the message is sent.
@@ -215,17 +218,25 @@ Injected script payloads do not execute.
 
 Requirement #6.
 
-- [ ] `core.Job` + `core/worker.py` poller thread (`close_old_connections()` per iteration)
-- [ ] `inbox/prompts.py` — strict JSON schema:
+- [x] AI-only `SummaryJob` table + `apps/inbox/ai.py` daemon worker (registered
+      via `bootstrap.register_background_thread`; sweeper-pattern daemon that
+      polls one QUEUED row per tick, `close_old_connections()` each loop — I9)
+- [x] `apps/inbox/prompts.py` — strict JSON schema
       `{what_they_want, whats_been_tried, current_status, key_details[]}`
-- [ ] `inbox/ai.py` — context window: first message + last 40, truncated to ~8K tokens,
-      oldest dropped first
-- [ ] Trigger: conversation opened and `last_seq - summary_upto_seq >= 5` → enqueue
-- [ ] 8s timeout, one retry, then deterministic non-LLM fallback with `degraded: true` (I8)
-- [ ] `summary.ready` pushed over WS from the worker thread
-- [ ] Cost/latency/token counts recorded on the Job payload; a management command or
-      admin view to total spend **(answers the "cost awareness" criterion)**
-- [ ] Summary panel in the conversation view with stale/refreshing/degraded states
+- [x] Context window: first message + last 40, truncated to
+      `AI_MAX_INPUT_TOKENS` (~8k) with oldest tail dropped first
+- [x] Trigger: **eager** enqueue on every `post_message` when
+      `last_seq - summary_upto_seq >= AI_ENQUEUE_THRESHOLD` (5), guarded by
+      "active job already queued" idempotency; explicit `POST
+      /api/conversations/<id>/summary/refresh` for the Refresh button
+- [x] 8s timeout, one retry, then deterministic non-LLM fallback with
+      `summary_degraded=True` (I8); empty API key → straight to fallback
+- [x] `summary.ready` envelope pushed over WS to `conv.<id>` from the worker
+- [x] Cost/latency/token counts recorded on the SummaryJob payload; **admin
+      cost dashboard** at `/admin/inbox/summaryjob/spend/` — per workspace × day,
+      USD total using `AI_PRICE_*` settings
+- [x] Summary panel above the thread with fresh / stale / refreshing /
+      degraded states; hidden when no summary yet
 
 **Gate:** Open a 30-message conversation → summary appears within seconds and is
 accurate. Add five more messages → it refreshes. Set an invalid API key → the panel

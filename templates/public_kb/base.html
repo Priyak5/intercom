@@ -1,0 +1,23 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ workspace.name }} help{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  <link rel="stylesheet" href="{% static 'css/public_kb.css' %}">
+  <style>:root { --pk-brand: {{ workspace.brand_color|default:'#2563eb' }}; }</style>
+</head>
+<body class="pk-body">
+  <header class="pk-head">
+    <div class="pk-head-inner">
+      <a class="pk-brand" href="{% url 'kb_public_index' slug=workspace.slug %}">{{ workspace.name }}</a>
+      <form class="pk-search" action="{% url 'kb_public_search' slug=workspace.slug %}" method="get" role="search">
+        <input type="search" name="q" value="{{ q|default:'' }}" placeholder="Search help…" aria-label="Search">
+      </form>
+    </div>
+  </header>
+  <main class="pk-main">{% block content %}{% endblock %}</main>
+  <footer class="pk-foot"><span class="muted">Help centre for {{ workspace.name }}</span></footer>
+</body>
+</html>

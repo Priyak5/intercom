@@ -30,6 +30,89 @@ docker compose up --build
 docker compose --profile proxy up -d --build
 ```
 
+## AI summarization
+
+Anthropic-Claude-Haiku generates a compact triage summary of each active
+conversation: what the customer wants, what's been tried, current status, and
+key details. Agents see it as a card above the thread when they open a
+conversation, so a fresh hand can catch up in seconds rather than by scrolling
+30 messages.
+
+**Prompt design.** [`apps/inbox/prompts.py`](apps/inbox/prompts.py) locks the
+output to strict JSON:
+
+```json
+{
+  "what_they_want": "...",
+  "whats_been_tried": "...",
+  "current_status": "...",
+  "key_details": ["...", "..."]
+}
+```
+
+The system message forbids markdown, code fences, or extra keys. The user
+message packs a transcript trimmed by [`build_transcript`](apps/inbox/prompts.py):
+the first customer message (usually the original ask) is always kept; the last
+40 messages ride along; if the estimated token count exceeds
+`AI_MAX_INPUT_TOKENS` (default 8k) older tail messages are dropped first.
+
+**Cost per summary.** With Haiku list pricing (~$1/1M input, $5/1M output as
+of writing) a typical 15-message summary costs ~$0.001-0.002. Configured via
+`AI_PRICE_INPUT_USD_PER_MTOKEN` / `AI_PRICE_OUTPUT_USD_PER_MTOKEN` in
+settings; totals rendered on the admin cost dashboard
+(`/admin/inbox/summaryjob/spend/`).
+
+**Trigger.** [`services.post_message`](apps/inbox/services.py) checks the
+delta after every send; when `last_seq - summary_upto_seq >=
+AI_ENQUEUE_THRESHOLD` (default 5) and no active job exists, it enqueues one.
+The refresh button on the summary card force-enqueues regardless of delta.
+
+**Fallback (CLAUDE.md I8).** The LLM call is bounded by `AI_TIMEOUT_SEC` (8s)
+via the Anthropic SDK client timeout. On timeout or exception we retry once,
+then run a deterministic non-LLM summary: first customer message + last three
+messages, packed into the same JSON schema with `degraded: true`. The card
+shows a "Basic summary — AI unavailable" badge. The UI always renders
+*something* — even with an empty `ANTHROPIC_API_KEY` set the worker just
+skips the LLM path entirely.
+
+**Restart survival.** A `SummaryJob` in RUNNING state at crash time is swept
+back to QUEUED at worker boot; nothing is lost.
+
+## Knowledge base
+
+Per-workspace public KB with a Quill (CDN) WYSIWYG editor, categories, draft/publish
+states, SQLite FTS5-backed search, and a widget-side suggest that surfaces relevant
+articles as the visitor types.
+
+**URL shape.** Public pages live at path-based tenant prefixes:
+
+- `/kb/<workspace_slug>/` — index (category tiles + latest articles)
+- `/kb/<workspace_slug>/c/<category_slug>/` — category detail
+- `/kb/<workspace_slug>/a/<article_slug>/` — article detail
+- `/kb/<workspace_slug>/search?q=…` — public search
+
+[`TenantMiddleware._resolve_public_kb`](apps/core/middleware.py) reads `<slug>`
+from the second URL segment and sets `request.workspace` for the view. Phase 9
+will layer Host-header resolution on top (`help.acme.com` → same view) without
+touching Phase 6's routes.
+
+Dashboard admin lives at [`/kb/admin/`](apps/kb/urls.py) — Quill 2.0 loads from
+jsDelivr; the editor's HTML output is never trusted, `apps/kb/services.py::sanitise_html`
+runs `bleach.clean()` on every write with a tight allow-list (see I7).
+
+**Search.** FTS5 virtual table `kb_article_fts` mirrors title/body_text/category
+name; three SQL triggers ([migration 0002](apps/kb/migrations/0002_fts5.py))
+keep it in step on every Article insert/update/delete — so shell edits, admin
+UI, and future service functions all stay indexed. Ranking is
+`bm25(kb_article_fts, 10.0, 1.0, 3.0)` — title matches weigh 10× body, category
+name 3×. User queries are token-quoted so FTS operators (`AND`, `NEAR`, `*`,
+`"`) can't misbehave; SQL injection is already impossible via parameter binding.
+
+**Widget suggest.** As a visitor types (2+ chars, debounced 400 ms), the widget
+iframe calls `GET /api/widget/kb/suggest?q=…` with its signed session token; the
+endpoint runs FTS scoped to the token's workspace and returns the top 3 articles.
+Clicking opens the public article page in a new tab.
+
 ## Email channel
 
 The support mailbox is a single IMAP account (Gmail / Zoho / any provider that
@@ -83,3 +166,11 @@ Populated as each phase lands; the full scaling-seam table lives in `architectur
 | No HMAC identity verification of the visitor on widget session-create | POC assumes anonymous or trust-on-first-use | Customer's server signs `user_hash = HMAC(hmac_secret, user_id)` in-page; server verifies before binding to a persistent Contact |
 | Empty `Workspace.allowed_origins` accepts any embed origin | Dev-default so `demo/index.html` works cross-origin without config | Production must set `allowed_origins` at workspace creation; enforced in `WidgetSessionView` |
 | Widget shows offline UI until the iframe is reloaded — no live online→offline transitions | POC keeps `config` a one-shot fetch on iframe load | Poll `/api/widget/config` every ~30s, or push presence changes over a lightweight WS channel |
+| KB search is FTS5 in SQLite, not a dedicated search cluster | SQLite ships with FTS5; zero infra, adequate ranking for a POC | Postgres `tsvector`/`ts_rank` for another single-instance step; Elasticsearch/OpenSearch for horizontal scale (architecture.md §11) |
+| KB public URLs are path-prefixed (`/kb/<workspace_slug>/…`), not on a customer domain | Phase 6 predates Phase 9 custom-domain wiring; keeps local demo working with no DNS | Phase 9 layers `Host`-header resolution on top of the middleware branch — same views, no route changes |
+| KB image upload is not implemented — Quill's image button accepts remote URLs only | Storage + serving is Phase 8+ material; embed URLs from any CDN | Add `AttachmentMeta` model + WhiteNoise-served upload endpoint, plus a Quill image handler that POSTs and inserts the returned URL |
+| KB articles have a single `is_published` boolean — no archived state, no versioning, no scheduled publish | Simplest working state for a POC; matches the ~100-article scale a hiring demo needs | `state` TextChoices enum + `revisions` FK table for authoring history |
+| AI cost dashboard is staff-only (Django admin), not per-workspace-scoped | POC pattern — internal-team view, not customer-visible | Add a per-workspace "usage" tab in the dashboard, gated by `IsWorkspaceAdmin`, with the same aggregation moved into a service |
+| AI summaries: Anthropic only, no failover to OpenAI/Gemini | One dependency footprint for the POC; Claude Haiku's list-price is well inside the "cheap enough" band | Wrap `_make_client` in a strategy interface; add a second implementation and pick via `AI_PROVIDER` env |
+| AI cost per-1M-token prices live in `settings.py` and must be updated manually as Anthropic pricing changes | Zero infra cost; hiring-demo lifespan is short | Read from a per-provider price constants module refreshed via a build-time fetch, or move pricing to a `PriceHistory` DB table |
+| `SummaryJob` retention is unbounded — every summary attempt is kept forever | Simple; the cost dashboard depends on the history | Add a nightly `VACUUM INTO`-adjacent prune (e.g. keep 90d of SUCCEEDED/DEGRADED rows) |

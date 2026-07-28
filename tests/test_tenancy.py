@@ -89,6 +89,43 @@ def test_api_requires_authentication(client):
 
 # --- guards ----------------------------------------------------------------
 
+# --- kb (Phase 6): public-URL slug scoping + cross-workspace read isolation ---
+
+def test_kb_public_article_scoped_by_workspace_slug(client, admin_a, admin_b):
+    """Workspace B has a published article; requesting it under Workspace A's slug 404s."""
+    from apps.kb import services as kb_services
+
+    b_article = kb_services.create_article(
+        workspace=admin_b.workspace, author=admin_b.user,
+        title="B private title", body_html="<p>B body</p>",
+    )
+    kb_services.publish_article(article=b_article)
+
+    # Correct workspace slug — 200.
+    ok = client.get(f"/kb/{admin_b.workspace.slug}/a/{b_article.slug}/")
+    assert ok.status_code == 200
+
+    # Wrong workspace slug — 404, no content leak.
+    wrong = client.get(f"/kb/{admin_a.workspace.slug}/a/{b_article.slug}/")
+    assert wrong.status_code == 404
+
+
+def test_kb_public_hides_drafts(client, admin_a):
+    from apps.kb import services as kb_services
+
+    draft = kb_services.create_article(
+        workspace=admin_a.workspace, author=admin_a.user,
+        title="Draft only", body_html="<p>hidden</p>",
+    )
+    resp = client.get(f"/kb/{admin_a.workspace.slug}/a/{draft.slug}/")
+    assert resp.status_code == 404
+
+
+def test_kb_unknown_workspace_slug_returns_404(client):
+    resp = client.get("/kb/does-not-exist/")
+    assert resp.status_code == 404
+
+
 # --- widget (Phase 3): cross-tenant visitor_id / token isolation -----------
 
 def test_widget_visitor_id_from_other_workspace_gets_fresh_contact(client, admin_a, admin_b):

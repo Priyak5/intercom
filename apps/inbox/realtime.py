@@ -138,6 +138,23 @@ def presence_envelope(actor_key: str, online: bool) -> dict:
     }
 
 
+def summary_ready_envelope(conv) -> dict:
+    """Broadcast when a SummaryJob finishes (succeeded or degraded). Carries the
+    full summary payload so the client renders without a second fetch.
+    """
+    return {
+        "type": "summary.ready",
+        "conversation_id": str(conv.id),
+        "seq": conv.summary_upto_seq,
+        "data": {
+            "summary": conv.summary,
+            "upto_seq": conv.summary_upto_seq,
+            "generated_at": conv.summary_generated_at.isoformat() if conv.summary_generated_at else None,
+            "degraded": conv.summary_degraded,
+        },
+    }
+
+
 # --- presence + typing state (in-process, ephemeral) ------------------------
 #
 # Both dicts are keyed by the DELIVERY GROUP (conv.<id>), so presence is per-conversation:

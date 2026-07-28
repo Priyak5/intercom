@@ -22,6 +22,10 @@
         </select>
       </form>
       {% endif %}
+      {% if current_membership %}
+      <a href="{% url 'inbox' %}">Inbox</a>
+      <a href="{% url 'kb_admin_list' %}">Knowledge base</a>
+      {% endif %}
       {% if current_membership and current_membership.role == 'admin' %}
       <a href="{% url 'team' %}">Team</a>
       {% endif %}

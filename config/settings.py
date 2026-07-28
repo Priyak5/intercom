@@ -69,6 +69,7 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.inbox",
     "apps.mail",
+    "apps.kb",
 ]
 
 MIDDLEWARE = [
@@ -239,6 +240,25 @@ SMTP_USER = env("SMTP_USER", "")
 SMTP_PASS = env("SMTP_PASS", "")
 # Hard timeout: agent replies must not hang the dashboard request (I8-adjacent).
 SMTP_TIMEOUT = int(env("SMTP_TIMEOUT", "8"))
+
+
+# --- AI summarisation (Phase 7) --------------------------------------------
+
+# Anthropic-Claude-Haiku generates conversation summaries in a background worker
+# thread. CLAUDE.md I8 mandates: never blocks a request, hard timeout, one retry,
+# then a deterministic non-LLM fallback. Empty key → worker still runs but skips
+# the LLM call and produces degraded fallback summaries.
+ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", "")
+AI_MODEL = env("AI_MODEL", "claude-haiku-4-5")
+AI_TIMEOUT_SEC = int(env("AI_TIMEOUT_SEC", "8"))  # I8
+AI_MAX_INPUT_TOKENS = int(env("AI_MAX_INPUT_TOKENS", "8000"))
+AI_MAX_OUTPUT_TOKENS = int(env("AI_MAX_OUTPUT_TOKENS", "512"))
+AI_ENQUEUE_THRESHOLD = int(env("AI_ENQUEUE_THRESHOLD", "5"))
+AI_WORKER_POLL_INTERVAL_SEC = int(env("AI_WORKER_POLL_INTERVAL_SEC", "2"))
+# List prices per 1M tokens; used by the admin cost dashboard. Update as pricing
+# changes — no code depends on the specific values.
+AI_PRICE_INPUT_USD_PER_MTOKEN = float(env("AI_PRICE_INPUT_USD_PER_MTOKEN", "1.00"))
+AI_PRICE_OUTPUT_USD_PER_MTOKEN = float(env("AI_PRICE_OUTPUT_USD_PER_MTOKEN", "5.00"))
 
 
 # --- logging ----------------------------------------------------------------

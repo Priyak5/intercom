@@ -144,6 +144,22 @@ def post_message(
         except Exception as exc:  # noqa: BLE001
             log.warning("smtp_hook_error conv_id=%s msg_id=%s error=%r", conversation.id, msg.id, exc)
 
+    # 7. Side-effect: enqueue an AI summary refresh when the conversation has grown by
+    # AI_ENQUEUE_THRESHOLD messages since the last summary. The worker will skip
+    # duplicates so this is safe to call on every post. I8: DB write is truth; the
+    # enqueue never blocks or fails the caller.
+    from django.conf import settings
+
+    if (conversation.last_seq - conversation.summary_upto_seq) >= getattr(
+        settings, "AI_ENQUEUE_THRESHOLD", 5
+    ):
+        try:
+            from apps.inbox import ai
+
+            ai.enqueue_summary(conversation=conversation)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ai_enqueue_error conv_id=%s error=%r", conversation.id, exc)
+
     return msg
 
 

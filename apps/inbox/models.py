@@ -93,9 +93,15 @@ class Conversation(BaseModel):
     first_response_at = models.DateTimeField(null=True, blank=True)
     resolved_at = models.DateTimeField(null=True, blank=True)
 
-    # AI summary (Phase 7); declared here so the schema is stable.
+    # AI summary (Phase 7). `summary` stores JSON matching the strict schema in
+    # prompts.py; `summary_upto_seq` marks the last message-seq the summary
+    # reflects (stale when `last_seq - summary_upto_seq >= AI_ENQUEUE_THRESHOLD`).
+    # `summary_generated_at` powers the "generated 2m ago" hint; `summary_degraded`
+    # is True when the deterministic fallback ran (LLM unavailable — I8).
     summary = models.TextField(blank=True)
     summary_upto_seq = models.PositiveIntegerField(default=0)
+    summary_generated_at = models.DateTimeField(null=True, blank=True)
+    summary_degraded = models.BooleanField(default=False)
 
     class Meta:
         indexes = [
@@ -150,3 +156,52 @@ class Message(BaseModel):
 
     def __str__(self) -> str:
         return f"msg:{self.conversation_id}#{self.seq}"
+
+
+class SummaryJobStatus(models.TextChoices):
+    """State machine for the AI summary worker.
+
+    QUEUED → RUNNING → SUCCEEDED     (LLM returned)
+                     → DEGRADED       (LLM failed all retries; fallback ran)
+                     → FAILED         (even the fallback threw — near-impossible)
+
+    A stale RUNNING row (from a crashed worker) is swept back to QUEUED at boot.
+    """
+    QUEUED = "queued", "Queued"
+    RUNNING = "running", "Running"
+    SUCCEEDED = "succeeded", "Succeeded"
+    DEGRADED = "degraded", "Degraded"
+    FAILED = "failed", "Failed"
+
+
+class SummaryJob(BaseModel):
+    """One row per (attempted) refresh of a Conversation.summary. Records token
+    usage, latency, and outcome — enough for the admin cost dashboard and for
+    the worker to skip duplicate enqueues while a job is in-flight.
+    """
+
+    conversation = models.ForeignKey(
+        "inbox.Conversation", on_delete=models.CASCADE, related_name="summary_jobs"
+    )
+    status = models.CharField(
+        max_length=12, choices=SummaryJobStatus.choices, default=SummaryJobStatus.QUEUED
+    )
+    upto_seq = models.PositiveIntegerField()  # conversation.last_seq at enqueue time
+    attempts = models.PositiveSmallIntegerField(default=0)
+    input_tokens = models.PositiveIntegerField(default=0)
+    output_tokens = models.PositiveIntegerField(default=0)
+    latency_ms = models.PositiveIntegerField(default=0)  # summed across attempts
+    error = models.TextField(blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            # Worker poll: pick QUEUED oldest-first.
+            models.Index(fields=["status", "created_at"]),
+            # Conversation-open freshness lookup.
+            models.Index(fields=["conversation", "-created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"summary:{self.conversation_id}@{self.upto_seq}:{self.status}"

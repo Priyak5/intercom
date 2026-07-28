@@ -59,6 +59,22 @@ body.widget-frame {
 
 .wf-typing { min-height: 1.1em; padding: 0 0.9rem 0.2rem; color: var(--wf-muted); font-size: 0.82em; font-style: italic; }
 
+/* KB suggest dropdown — sits between the thread and the composer. */
+.wf-kb {
+  border-top: 1px solid var(--wf-border);
+  max-height: 200px; overflow-y: auto; background: #fafbfd;
+}
+.wf-kb-item {
+  display: block; padding: 0.55rem 0.9rem;
+  text-decoration: none; color: var(--wf-fg);
+  border-bottom: 1px solid #e2e5ea;
+}
+.wf-kb-item:last-child { border-bottom: 0; }
+.wf-kb-item:hover { background: #eef2ff; }
+.wf-kb-title { font-weight: 600; font-size: 0.9em; }
+.wf-kb-snippet { font-size: 0.78em; color: var(--wf-muted); margin-top: 0.15rem;
+  overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
 .wf-composer {
   display: flex; gap: 0.5rem;
   padding: 0.6rem;

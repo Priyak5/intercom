@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}{% if article %}Edit article{% else %}New article{% endif %}{% endblock %}
+{% block extra_head %}
+<link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet">
+<style>
+  .kb-editor { min-height: 320px; background: #fff; }
+  .kb-form input[type=text] { width: 100%; }
+  .kb-form .row { display: flex; gap: 0.5rem; align-items: center; }
+  .kb-form .row select { flex: 1; }
+  .kb-form-actions { margin-top: 1rem; display: flex; gap: 0.5rem; }
+  .ql-toolbar { border-top-left-radius: 6px; border-top-right-radius: 6px; }
+  .ql-container { border-bottom-left-radius: 6px; border-bottom-right-radius: 6px; }
+</style>
+{% endblock %}
+{% block content %}
+<p><a href="{% url 'kb_admin_list' %}">← Back to knowledge base</a></p>
+<h1>{% if article %}Edit article{% else %}New article{% endif %}</h1>
+
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+{% if article and article.is_published %}
+  <p class="muted">Published {{ article.published_at|date:"Y-m-d H:i" }} — visible at
+    <a href="{% url 'kb_public_article' slug=current_workspace.slug article_slug=article.slug %}" target="_blank" rel="noopener">
+      /kb/{{ current_workspace.slug }}/a/{{ article.slug }}/ ↗</a>
+  </p>
+{% endif %}
+
+<form method="post" class="kb-form" id="kb-form">
+  {% csrf_token %}
+  <label>Title
+    <input type="text" name="title" value="{{ article.title|default:'' }}" required autocomplete="off">
+  </label>
+  <label>Category
+    <div class="row">
+      <select name="category">
+        <option value="">— Uncategorised —</option>
+        {% for c in categories %}
+          <option value="{{ c.id }}"{% if article and article.category_id == c.id %} selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+      <a href="{% url 'kb_admin_categories' %}">Manage</a>
+    </div>
+  </label>
+
+  <label>Body</label>
+  <div id="kb-editor" class="kb-editor">{{ article.body_html|default:''|safe }}</div>
+  <input type="hidden" name="body_html" id="body-html">
+
+  <div class="kb-form-actions">
+    <button type="submit" name="action" value="save">Save draft</button>
+    {% if article and article.is_published %}
+      <button type="submit" name="action" value="unpublish">Unpublish</button>
+    {% else %}
+      <button type="submit" name="action" value="publish">Publish</button>
+    {% endif %}
+  </div>
+</form>
+
+<script src="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.js"></script>
+<script>
+  var quill = new Quill("#kb-editor", {
+    theme: "snow",
+    modules: {
+      toolbar: [
+        [{ header: [1, 2, 3, false] }],
+        ["bold", "italic", "underline", "strike"],
+        [{ list: "ordered" }, { list: "bullet" }],
+        ["blockquote", "code-block"],
+        ["link", "image"],
+        ["clean"],
+      ],
+    },
+  });
+  document.getElementById("kb-form").addEventListener("submit", function () {
+    document.getElementById("body-html").value = quill.root.innerHTML;
+  });
+</script>
+{% endblock %}

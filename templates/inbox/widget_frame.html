@@ -25,6 +25,8 @@
       <div class="wf-typing" id="wf-typing"></div>
     </div>
 
+    <div class="wf-kb" id="wf-kb" hidden aria-live="polite"></div>
+
     <form class="wf-composer" id="wf-composer" autocomplete="off">
       <input type="text" id="wf-input" placeholder="Type a message…" disabled>
       <button type="submit" disabled aria-label="Send">Send</button>
@@ -64,6 +66,7 @@
         thread:  document.getElementById("wf-thread"),
         welcome: document.getElementById("wf-welcome"),
         typing:  document.getElementById("wf-typing"),
+        kb:      document.getElementById("wf-kb"),
         composer:document.getElementById("wf-composer"),
         input:   document.getElementById("wf-input"),
         sendBtn: document.querySelector("#wf-composer button"),
@@ -75,6 +78,7 @@
 
       var token = null, convId = null, socket = null;
       var byClient = {}, bySeq = {}, lastTypingSent = 0, typingTimer = null;
+      var kbTimer = null, kbLastQuery = "";
 
       function loadStore() {
         try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}") || {}; }
@@ -236,6 +240,7 @@
         el.innerHTML = '<span class="msg-body">' + api.escapeHtml(body) + "</span>";
         els.thread.appendChild(el); byClient[cid] = el; els.thread.scrollTop = els.thread.scrollHeight;
         els.input.value = "";
+        hideKb();
         widgetFetch("/api/widget/messages", "POST", { client_msg_id: cid, body_text: body }).then(function (r) {
           if (r.ok && r.data) {
             el.classList.remove("pending"); el.classList.add("confirmed");
@@ -244,9 +249,43 @@
         }).catch(function () { el.classList.add("failed"); });
       });
 
+      // KB suggest — debounced 400ms while typing. Token-authed like the rest of the
+      // widget surface, so the query is scoped to the visitor's workspace only.
+      function hideKb() { els.kb.hidden = true; els.kb.innerHTML = ""; kbLastQuery = ""; }
+      function renderKb(results) {
+        if (!results || !results.length) { hideKb(); return; }
+        var frag = "";
+        for (var i = 0; i < results.length; i++) {
+          var r = results[i];
+          frag += '<a class="wf-kb-item" href="' + api.escapeHtml(r.url) +
+                  '" target="_blank" rel="noopener">' +
+                  '<div class="wf-kb-title">' + api.escapeHtml(r.title) + '</div>' +
+                  (r.snippet ? '<div class="wf-kb-snippet">' + api.escapeHtml(r.snippet) + '</div>' : '') +
+                  '</a>';
+        }
+        els.kb.innerHTML = frag;
+        els.kb.hidden = false;
+      }
+      function fetchKb(q) {
+        widgetFetch("/api/widget/kb/suggest?q=" + encodeURIComponent(q), "GET").then(function (r) {
+          if (kbLastQuery !== q) return;  // a newer keystroke won
+          if (r.ok && r.data) renderKb(r.data.results);
+          else hideKb();
+        }).catch(hideKb);
+      }
+
       els.input.addEventListener("input", function () {
         var now = Date.now();
         if (socket && now - lastTypingSent > 1500) { socket.sendControl({ action: "typing" }); lastTypingSent = now; }
+        var q = els.input.value.trim();
+        if (kbTimer) clearTimeout(kbTimer);
+        if (q.length < 2 || !token) { hideKb(); return; }
+        kbLastQuery = q;
+        kbTimer = setTimeout(function () { fetchKb(q); }, 400);
+      });
+
+      els.input.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") hideKb();
       });
 
       // Offline capture: mint a session with the email + first message, then confirm.

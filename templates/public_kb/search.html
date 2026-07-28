@@ -1,0 +1,23 @@
+{% extends "public_kb/base.html" %}
+{% block title %}Search — {{ workspace.name }} help{% endblock %}
+{% block content %}
+<h1 class="pk-h1">Search results</h1>
+{% if q %}
+<p class="muted">Results for “{{ q }}”</p>
+{% if results %}
+<ul class="pk-article-list">
+  {% for r in results %}
+  <li>
+    <a href="{% url 'kb_public_article' slug=workspace.slug article_slug=r.article.slug %}">{{ r.article.title }}</a>
+    {% if r.article.category %}<span class="muted"> — {{ r.article.category.name }}</span>{% endif %}
+    {% if r.snippet %}<div class="pk-snippet muted">{{ r.snippet }}</div>{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">No articles match — try different words.</p>
+{% endif %}
+{% else %}
+<p class="muted">Type a query above.</p>
+{% endif %}
+{% endblock %}

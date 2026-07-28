@@ -1,20 +1,25 @@
 """Tenant resolution middleware (CLAUDE.md I6).
 
 `request.workspace` and `request.membership` are DERIVED here — never read from a request
-body, query param, or header. For the dashboard that source is the session's selected
-membership, verified against the DB on every request. Switching workspaces goes only
-through accounts.services.set_selected_workspace, which authorizes membership before
-writing the session.
+body, query param, or header. Sources, by request type:
+  - Dashboard: session's selected `workspace_id`, verified via Membership on every request.
+  - Public KB (Phase 6): the `<slug>` segment of `/kb/<slug>/...` — no membership required.
+  - Custom domains (Phase 9): the `Host` header → verified `Domain` row → workspace.
 
-Widget (Phase 3) and public-KB (Phase 9) resolution are separate paths; this is written
-as a dispatcher so they slot in without touching the dashboard path.
+Switching workspaces goes only through `accounts.services.set_selected_workspace`, which
+authorises membership before writing the session. A `workspace_id` in a request body or
+query param is always ignored.
+
+Widget requests (Phase 3) resolve their tenancy from a signed visitor token INSIDE the
+view — not here — because widget endpoints set `authentication_classes = []` and don't
+depend on `request.workspace`.
 """
 
 import logging
 
 log = logging.getLogger("core.middleware")
 
-# Prefixes that never need a workspace. Anonymous/public surfaces must pass untouched.
+# Prefixes that need NEITHER a dashboard workspace NOR a KB workspace.
 EXEMPT_PREFIXES = (
     "/healthz",
     "/admin/",
@@ -24,6 +29,10 @@ EXEMPT_PREFIXES = (
     "/logout",
     "/invite/",
 )
+
+# Public-KB path pattern: /kb/<slug>/...  (but NOT /kb/admin/... — that's the dashboard).
+PUBLIC_KB_PREFIX = "/kb/"
+PUBLIC_KB_ADMIN_PREFIX = "/kb/admin"
 
 
 class TenantMiddleware:
@@ -35,8 +44,12 @@ class TenantMiddleware:
         request.workspace = None
         request.membership = None
 
-        if not request.path.startswith(EXEMPT_PREFIXES):
-            self._resolve_dashboard(request)
+        path = request.path
+        if not path.startswith(EXEMPT_PREFIXES):
+            if path.startswith(PUBLIC_KB_PREFIX) and not path.startswith(PUBLIC_KB_ADMIN_PREFIX):
+                self._resolve_public_kb(request)
+            else:
+                self._resolve_dashboard(request)
 
         return self.get_response(request)
 
@@ -73,3 +86,22 @@ class TenantMiddleware:
         if membership is not None:
             request.workspace = membership.workspace
             request.membership = membership
+
+    def _resolve_public_kb(self, request):
+        """Read `<slug>` from `/kb/<slug>/...` and set request.workspace.
+
+        No membership is required — this is the public-readable KB. Views must still
+        check `request.workspace is not None` and `article.is_published` before serving.
+        Phase 9 will layer Host-header resolution *before* this path check, so a custom
+        domain can resolve without the `/kb/<slug>/` prefix appearing in the URL.
+        """
+        from apps.accounts.models import Workspace
+
+        # /kb/<slug>/... → ["", "kb", "<slug>", ...]
+        parts = request.path.split("/", 3)
+        if len(parts) < 3 or not parts[2]:
+            return
+        slug = parts[2]
+        ws = Workspace.objects.filter(slug=slug).first()
+        if ws is not None:
+            request.workspace = ws

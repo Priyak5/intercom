@@ -10,6 +10,7 @@ urlpatterns = [
     path("widget/session", widget_api.WidgetSessionView.as_view(), name="api_widget_session"),
     path("widget/conversation", widget_api.WidgetConversationView.as_view(), name="api_widget_conversation"),
     path("widget/messages", widget_api.WidgetMessagesView.as_view(), name="api_widget_messages"),
+    path("widget/kb/suggest", widget_api.WidgetKbSuggestView.as_view(), name="api_widget_kb_suggest"),
     path("conversations", api.ConversationListView.as_view(), name="api_conversations"),
     path(
         "conversations/<uuid:conversation_id>/messages",
@@ -19,4 +20,9 @@ urlpatterns = [
     path("conversations/<uuid:conversation_id>/read", api.ReadView.as_view(), name="api_conv_read"),
     path("conversations/<uuid:conversation_id>/assign", api.AssignView.as_view(), name="api_conv_assign"),
     path("conversations/<uuid:conversation_id>/status", api.StatusView.as_view(), name="api_conv_status"),
+    path(
+        "conversations/<uuid:conversation_id>/summary/refresh",
+        api.SummaryRefreshView.as_view(),
+        name="api_conv_summary_refresh",
+    ),
 ]
