@@ -22,6 +22,22 @@ _lock = threading.Lock()
 _started = False
 
 
+def register_background_thread(name: str, factory: Callable[[], threading.Thread]) -> None:
+    """Let an app register a background-thread factory without core importing that app
+    (e.g. InboxConfig.ready() registers the presence sweeper). Must be called before
+    maybe_start_background_threads() — which holds because app ready() runs during
+    get_asgi_application(), earlier in config/asgi.py than the start call.
+    """
+    with _lock:
+        if _started:
+            raise RuntimeError(
+                f"register_background_thread({name!r}) called after threads already started"
+            )
+        if any(existing == name for existing, _ in _THREAD_FACTORIES):
+            return  # ready() can run more than once; keep registration idempotent
+        _THREAD_FACTORIES.append((name, factory))
+
+
 def maybe_start_background_threads() -> None:
     global _started
     if not getattr(settings, "RUN_BACKGROUND_THREADS", False):
