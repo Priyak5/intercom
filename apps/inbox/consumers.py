@@ -6,8 +6,9 @@ Membership DB check; a subscribed conversation is always resolved *within* that 
 the widget's workspace is derived from the token signature. A client-supplied conversation
 id is never trusted beyond a workspace-scoped lookup.
 
-Send happens over REST (I3); these consumers only receive control frames
-(subscribe/typing/read/ping) and push notifications.
+Presence/typing are per-conversation and delivered to the conv group. `fanout` suppresses
+echoing an actor's own presence/typing back to itself, so each party sees only the OTHER's
+state. Send happens over REST (I3); these consumers only receive control frames.
 """
 
 import logging
@@ -22,7 +23,32 @@ from apps.inbox.models import Conversation
 log = logging.getLogger("inbox.consumers")
 
 
-class AgentConsumer(JsonWebsocketConsumer):
+class _PresenceMixin:
+    """Shared fanout that drops an actor's own presence/typing echo."""
+
+    def fanout(self, event):
+        env = event["envelope"]
+        if env.get("type") in ("typing", "presence.updated"):
+            if (env.get("data") or {}).get("actor") == self.actor_key:
+                return  # don't show someone their own typing/presence
+        self.send_json(env)
+
+    def _join_conv(self, group):
+        async_to_sync(self.channel_layer.group_add)(group, self.channel_name)
+        # Tell this socket who is already present here (late-joiner snapshot).
+        for actor in realtime.presence_actors(group):
+            if actor != self.actor_key:
+                self.send_json(realtime.presence_envelope(actor, True))
+        realtime.touch_presence(group, self.actor_key)
+        realtime.broadcast(group, realtime.presence_envelope(self.actor_key, True))
+
+    def _leave_conv(self, group):
+        realtime.drop_presence(group, self.actor_key)
+        realtime.broadcast(group, realtime.presence_envelope(self.actor_key, False))
+        async_to_sync(self.channel_layer.group_discard)(group, self.channel_name)
+
+
+class AgentConsumer(_PresenceMixin, JsonWebsocketConsumer):
     def connect(self):
         user = self.scope.get("user")
         if user is None or not user.is_authenticated:
@@ -45,29 +71,19 @@ class AgentConsumer(JsonWebsocketConsumer):
         self.conversation_id = None
         self.conv_group_name = None
         self.accept()
+        # ws group carries inbox-list updates (conversation.updated); presence starts when
+        # the agent actually opens a conversation.
         async_to_sync(self.channel_layer.group_add)(
             realtime.ws_group(self.workspace_id), self.channel_name
-        )
-        realtime.touch_presence(self.workspace_id, self.actor_key)
-        realtime.broadcast(
-            realtime.ws_group(self.workspace_id),
-            realtime.presence_envelope(self.workspace_id, self.actor_key, online=True),
         )
 
     def disconnect(self, code):
         if getattr(self, "conv_group_name", None):
-            async_to_sync(self.channel_layer.group_discard)(
-                self.conv_group_name, self.channel_name
-            )
+            self._leave_conv(self.conv_group_name)
         if getattr(self, "workspace_id", None):
             async_to_sync(self.channel_layer.group_discard)(
                 realtime.ws_group(self.workspace_id), self.channel_name
             )
-            if realtime.drop_presence(self.workspace_id, self.actor_key):
-                realtime.broadcast(
-                    realtime.ws_group(self.workspace_id),
-                    realtime.presence_envelope(self.workspace_id, self.actor_key, online=False),
-                )
 
     def receive_json(self, content, **kwargs):
         action = content.get("action")
@@ -78,7 +94,8 @@ class AgentConsumer(JsonWebsocketConsumer):
         elif action == "read":
             self._read(content.get("seq"))
         elif action == "ping":
-            realtime.touch_presence(self.workspace_id, self.actor_key)
+            if self.conv_group_name:
+                realtime.touch_presence(self.conv_group_name, self.actor_key)
             self.send_json({"type": "pong"})
 
     def _subscribe(self, conversation_id):
@@ -91,10 +108,10 @@ class AgentConsumer(JsonWebsocketConsumer):
             self.send_json({"type": "error", "data": {"detail": "conversation not found"}})
             return
         if self.conv_group_name:
-            async_to_sync(self.channel_layer.group_discard)(self.conv_group_name, self.channel_name)
+            self._leave_conv(self.conv_group_name)
         self.conversation_id = str(conv.id)
         self.conv_group_name = realtime.conv_group(conv.id)
-        async_to_sync(self.channel_layer.group_add)(self.conv_group_name, self.channel_name)
+        self._join_conv(self.conv_group_name)
         self.send_json(
             {"type": "subscribed", "conversation_id": str(conv.id), "data": {"last_seq": conv.last_seq}}
         )
@@ -102,9 +119,9 @@ class AgentConsumer(JsonWebsocketConsumer):
     def _typing(self):
         if not self.conversation_id:
             return
-        realtime.touch_typing(self.conversation_id, self.actor_key)
+        realtime.touch_typing(self.conv_group_name, self.actor_key)
         realtime.broadcast(
-            realtime.conv_group(self.conversation_id),
+            self.conv_group_name,
             realtime.typing_envelope(
                 self.conversation_id, self.actor_key, True, name=self.user.name or self.user.email
             ),
@@ -119,11 +136,8 @@ class AgentConsumer(JsonWebsocketConsumer):
         if conv is not None:
             services.mark_read(conversation=conv, reader="agent", upto_seq=seq)
 
-    def fanout(self, event):
-        self.send_json(event["envelope"])
 
-
-class WidgetConsumer(JsonWebsocketConsumer):
+class WidgetConsumer(_PresenceMixin, JsonWebsocketConsumer):
     def connect(self):
         info = widget_auth.verify_visitor_token(self._token())
         if info is None:
@@ -143,28 +157,18 @@ class WidgetConsumer(JsonWebsocketConsumer):
             return
         self.accept()
         self.conv_group_name = realtime.conv_group(self.conversation_id)
-        async_to_sync(self.channel_layer.group_add)(self.conv_group_name, self.channel_name)
-        realtime.touch_presence(self.workspace_id, self.actor_key)
-        realtime.broadcast(
-            realtime.conv_group(self.conversation_id),
-            realtime.presence_envelope(self.workspace_id, self.actor_key, online=True),
-        )
+        self._join_conv(self.conv_group_name)
 
     def disconnect(self, code):
         if getattr(self, "conv_group_name", None):
-            async_to_sync(self.channel_layer.group_discard)(self.conv_group_name, self.channel_name)
-            realtime.drop_presence(self.workspace_id, self.actor_key)
-            realtime.broadcast(
-                realtime.conv_group(self.conversation_id),
-                realtime.presence_envelope(self.workspace_id, self.actor_key, online=False),
-            )
+            self._leave_conv(self.conv_group_name)
 
     def receive_json(self, content, **kwargs):
         action = content.get("action")
         if action == "typing":
-            realtime.touch_typing(self.conversation_id, self.actor_key)
+            realtime.touch_typing(self.conv_group_name, self.actor_key)
             realtime.broadcast(
-                realtime.conv_group(self.conversation_id),
+                self.conv_group_name,
                 realtime.typing_envelope(self.conversation_id, self.actor_key, True, name="Visitor"),
             )
         elif action == "read":
@@ -174,11 +178,8 @@ class WidgetConsumer(JsonWebsocketConsumer):
                 if conv is not None:
                     services.mark_read(conversation=conv, reader="contact", upto_seq=seq)
         elif action == "ping":
-            realtime.touch_presence(self.workspace_id, self.actor_key)
+            realtime.touch_presence(self.conv_group_name, self.actor_key)
             self.send_json({"type": "pong"})
-
-    def fanout(self, event):
-        self.send_json(event["envelope"])
 
     def _token(self):
         qs = parse_qs(self.scope["query_string"].decode())

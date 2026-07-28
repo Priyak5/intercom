@@ -124,7 +124,7 @@ def typing_envelope(conversation_id, actor_key: str, is_typing: bool, name: str 
     }
 
 
-def presence_envelope(workspace_id, actor_key: str, online: bool) -> dict:
+def presence_envelope(actor_key: str, online: bool) -> dict:
     return {
         "type": "presence.updated",
         "conversation_id": None,
@@ -134,66 +134,78 @@ def presence_envelope(workspace_id, actor_key: str, online: bool) -> dict:
 
 
 # --- presence + typing state (in-process, ephemeral) ------------------------
+#
+# Both dicts are keyed by the DELIVERY GROUP (conv.<id>), so presence is per-conversation:
+# "is this actor currently viewing this conversation?" Each participant sees the OTHER's
+# state; consumers suppress echoing an actor's own presence/typing back to itself.
 
-_presence: dict[str, dict[str, float]] = {}  # ws_id -> {actor_key: expires_at}
-_typing: dict[str, dict[str, float]] = {}    # conv_id -> {actor_key: expires_at}
+_presence: dict[str, dict[str, float]] = {}  # group -> {actor_key: expires_at}
+_typing: dict[str, dict[str, float]] = {}    # group -> {actor_key: expires_at}
 _state_lock = threading.Lock()
 
 
-def touch_presence(workspace_id, actor_key: str) -> bool:
-    """Mark an actor online (or refresh). Returns True if this is a new online transition."""
-    ws_id = str(workspace_id)
+def touch_presence(group: str, actor_key: str) -> bool:
+    """Mark an actor online in a group (or refresh). True if this is a new online transition."""
     with _state_lock:
-        actors = _presence.setdefault(ws_id, {})
+        actors = _presence.setdefault(group, {})
         newly_online = actor_key not in actors
         actors[actor_key] = time.monotonic() + PRESENCE_TTL
     return newly_online
 
 
-def drop_presence(workspace_id, actor_key: str) -> bool:
-    ws_id = str(workspace_id)
+def drop_presence(group: str, actor_key: str) -> bool:
     with _state_lock:
-        actors = _presence.get(ws_id)
+        actors = _presence.get(group)
         if not actors or actor_key not in actors:
             return False
         del actors[actor_key]
         if not actors:
-            del _presence[ws_id]
+            del _presence[group]
     return True
 
 
-def touch_typing(conversation_id, actor_key: str) -> None:
-    conv_id = str(conversation_id)
+def presence_actors(group: str) -> list[str]:
+    """Currently-online actors in a group — sent to a late joiner so they learn who's here."""
+    now = time.monotonic()
     with _state_lock:
-        _typing.setdefault(conv_id, {})[actor_key] = time.monotonic() + TYPING_TTL
+        return [a for a, exp in _presence.get(group, {}).items() if exp > now]
+
+
+def touch_typing(group: str, actor_key: str) -> None:
+    with _state_lock:
+        _typing.setdefault(group, {})[actor_key] = time.monotonic() + TYPING_TTL
 
 
 # --- sweeper thread ---------------------------------------------------------
+
+def _conv_id_from_group(group: str) -> str:
+    return group[5:] if group.startswith("conv.") else group
+
 
 def _sweep_once() -> None:
     now = time.monotonic()
     expired_presence: list[tuple[str, str]] = []
     expired_typing: list[tuple[str, str]] = []
     with _state_lock:
-        for ws_id, actors in list(_presence.items()):
+        for group, actors in list(_presence.items()):
             for actor, exp in list(actors.items()):
                 if exp <= now:
                     del actors[actor]
-                    expired_presence.append((ws_id, actor))
+                    expired_presence.append((group, actor))
             if not actors:
-                del _presence[ws_id]
-        for conv_id, actors in list(_typing.items()):
+                del _presence[group]
+        for group, actors in list(_typing.items()):
             for actor, exp in list(actors.items()):
                 if exp <= now:
                     del actors[actor]
-                    expired_typing.append((conv_id, actor))
+                    expired_typing.append((group, actor))
             if not actors:
-                del _typing[conv_id]
+                del _typing[group]
     # Broadcast outside the lock (broadcast may block on fut.result).
-    for ws_id, actor in expired_presence:
-        broadcast(ws_group(ws_id), presence_envelope(ws_id, actor, online=False))
-    for conv_id, actor in expired_typing:
-        broadcast(conv_group(conv_id), typing_envelope(conv_id, actor, is_typing=False))
+    for group, actor in expired_presence:
+        broadcast(group, presence_envelope(actor, online=False))
+    for group, actor in expired_typing:
+        broadcast(group, typing_envelope(_conv_id_from_group(group), actor, is_typing=False))
 
 
 def make_sweeper_thread() -> threading.Thread:
