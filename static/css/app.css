@@ -101,3 +101,14 @@ body.widget-demo { display: flex; align-items: center; justify-content: center; 
 .widget-head { display: flex; justify-content: space-between; align-items: center; padding: 0.7rem 0.9rem; background: var(--accent); color: #fff; }
 .widget-status { font-size: 0.8em; opacity: 0.85; }
 .widget-card .thread { flex: 1; }
+
+/* Visitor perspective: their OWN (contact) bubbles go right, the agent's go left —
+   the mirror of the agent inbox, where msg-agent is right and msg-contact is left. */
+body.widget-demo .msg-agent { align-self: flex-start; background: #eef0f4; color: var(--fg); }
+body.widget-demo .msg-contact { align-self: flex-end; background: var(--accent); color: #fff; }
+
+/* Peer online status in the agent thread header */
+.thread-header { display: flex; align-items: center; justify-content: space-between; }
+.peer-presence { font-size: 0.8em; font-weight: 400; }
+.peer-presence.online { color: var(--ok); }
+.peer-presence.offline { color: var(--muted); }

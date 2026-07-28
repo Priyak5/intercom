@@ -71,6 +71,12 @@
         typingTimer = setTimeout(function () { typingEl.textContent = ""; }, 3000);
       }
 
+      function showAgentPresence(d) {
+        // Self-echo is filtered server-side, so any presence here is an agent's.
+        if (!d || String(d.actor || "").indexOf("agent:") !== 0) return;
+        statusEl.textContent = d.online ? "Agent online" : "Agent offline";
+      }
+
       var socket = null;
 
       // 1. Start a visitor session, then connect the socket.
@@ -79,17 +85,20 @@
         token = r.data.token; convId = r.data.conversation_id;
         document.getElementById("widget-title").textContent = (r.data.workspace && r.data.workspace.name) || "Chat";
         input.disabled = false; sendBtn.disabled = false;
+        statusEl.textContent = "waiting for an agent…";
 
         socket = window.createSocket({
           wsUrl: "/ws/widget/?session=" + encodeURIComponent(token),
           mode: "widget",
-          onStatus: function (s) { statusEl.textContent = s; banner.style.display = s === "offline" ? "block" : "none"; },
+          // Connection state drives the banner; statusEl shows the AGENT's presence.
+          onStatus: function (s) { banner.style.display = s === "offline" ? "block" : "none"; },
           backfill: function (afterSeq) {
             return widgetFetch("/api/widget/messages?after_seq=" + afterSeq, "GET").then(function (r) { return (r.data) || { results: [] }; });
           },
           onEvent: function (type, data) {
             if (type === "message.created") render(data);
             else if (type === "typing") showTyping(data);
+            else if (type === "presence.updated") showAgentPresence(data);
           },
         });
         socket.setConversation(convId);

@@ -4,7 +4,8 @@
 (function () {
   var convListEl = document.getElementById("conv-list");
   var threadEl = document.getElementById("thread");
-  var headerEl = document.getElementById("thread-header");
+  var titleEl = document.getElementById("thread-title");
+  var presenceEl = document.getElementById("peer-presence");
   var composer = document.getElementById("composer");
   var input = document.getElementById("composer-input");
   var typingEl = document.getElementById("typing-indicator");
@@ -38,6 +39,14 @@
     if (type === "message.created") renderMessage(data);
     else if (type === "conversation.updated") loadConversations();
     else if (type === "typing") showTyping(data);
+    else if (type === "presence.updated") showPresence(data);
+  }
+
+  function showPresence(data) {
+    // The self-echo is filtered server-side, so any presence we get is the visitor's.
+    if (!data || String(data.actor || "").indexOf("contact:") !== 0) return;
+    presenceEl.textContent = data.online ? "● online" : "○ offline";
+    presenceEl.className = "peer-presence " + (data.online ? "online" : "offline");
   }
 
   function loadConversations() {
@@ -61,7 +70,9 @@
     currentConv = id;
     byClient = {};
     threadEl.innerHTML = "";
-    headerEl.textContent = name || "Conversation";
+    titleEl.textContent = name || "Conversation";
+    presenceEl.textContent = "";
+    presenceEl.className = "peer-presence";
     composer.style.display = "flex";
     socket.subscribe(id); // resets seq tracking + backfills history from 0
     loadConversations();
