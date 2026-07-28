@@ -12,4 +12,4 @@ EXPOSE 8000
 # One worker is mandatory (I1). config/asgi.py reads UVICORN_WORKERS to assert it.
 ENV UVICORN_WORKERS=1
 CMD ["sh","-c","python manage.py migrate --noinput && \
-     exec uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-1}"]
+     exec uvicorn config.asgi:application --host 0.0.0.0 --port ${PORT:-8000} --workers ${UVICORN_WORKERS:-1}"]
