@@ -132,12 +132,19 @@ tried in order:
 3. Same sender + same normalised subject (strips `Re:`/`Fwd:`) within 7 days.
 4. Otherwise a fresh Conversation.
 
-**Deliverability.** For a $0 POC we rely on the mailbox provider's outbound
-reputation (Gmail app-passwords + Zoho catch-alls are typical). Production
-should set up **SPF** (`v=spf1 include:_spf.google.com ~all`) plus **DKIM** at
-the provider console, and **DMARC** (`v=DMARC1; p=quarantine; rua=mailto:...`)
-in DNS, then swap `smtplib` for a transactional provider (Postmark / SES) —
-that swap only touches [`apps/mail/send.py`](apps/mail/send.py).
+**Deliverability & provider choice.** Outbound is Resend when `RESEND_API_KEY`
+is set — Railway, Fly.io, and most PaaS block outbound ports 25/465/587, so
+`smtplib` deadlocks against a shipping host. Resend's HTTPS API sidesteps that.
+Locally or on hosts that allow SMTP, leave `RESEND_API_KEY` empty and Zoho /
+Gmail app-passwords via `SMTP_*` still work — [`apps/mail/send.py`](apps/mail/send.py)
+picks the provider based on config with no code changes. Inbound polling is
+still IMAP over TLS on 993 (universally allowed).
+
+Production should set up **SPF**, **DKIM**, and **DMARC** on your sending
+domain — verify it in Resend (or your provider of choice), which returns the
+DNS records to add. `MAIL_FROM` must be an address on a domain you've verified;
+Resend's `onboarding@resend.dev` is fine for pre-verification testing but only
+deliverable to the Resend account owner's email.
 
 ## Known Limitations
 
@@ -149,7 +156,9 @@ Populated as each phase lands; the full scaling-seam table lives in `architectur
 | Invite emails print to the console (Django `EMAIL_BACKEND`) | Support-reply SMTP is separate (uses `smtplib` directly with `SMTP_*` env); keeping the Django backend on console avoids two credential sets for the demo | Set `EMAIL_BACKEND` to the SMTP backend to deliver invites, or reuse `SMTP_*` via `django.core.mail.backends.smtp.EmailBackend` |
 | Email channel handles **one workspace per deploy** (`MAIL_WORKSPACE_ID`) | Single shared support mailbox; every un-threaded inbound routes to one workspace | Per-workspace catch-all address (e.g. `support-{slug}@domain`) or a mailbox per workspace, decoded in the poller |
 | Attachments in inbound email are stripped | Storage, download UX, virus scanning are non-trivial for POC | Save payloads to `data/attachments/<msg_id>/`, new `AttachmentMeta` model, per-conversation download endpoint |
-| SMTP send is best-effort, no inline retry | `delivery_state=FAILED` is the visible signal; agent can resend manually | Wrap in a Job worker with exponential backoff (Job model arrives with Phase 7 AI) |
+| Outbound email is best-effort, no inline retry | `delivery_state=FAILED` is the visible signal; agent can resend manually | Wrap in a Job worker with exponential backoff (SummaryJob shape is the template) |
+| Outbound uses Resend (HTTPS) by default; SMTP path kept only for local dev | Railway and most PaaS block ports 25/465/587 — SMTP is a dead end on the demo host | HTTPS API is production-grade; leave it. Only revisit if the customer needs a specific mailbox provider that lacks an HTTPS ingest API. |
+| `MAIL_FROM` must be on a Resend-verified domain (or `onboarding@resend.dev`) | Resend refuses arbitrary domains to prevent spoofing | Buy/own a domain and complete Resend's SPF+DKIM+DMARC setup |
 | IMAP polls every 30s (no IDLE) | Simpler; latency is fine for a POC | `imapclient` supports IDLE — wire a supervisor loop that falls back to polling on IDLE drops |
 | Plus-address round-trip requires provider `+` sub-addressing | Gmail/Zoho support it; some corporate servers strip `+` | `In-Reply-To`/`References` still threads via Path 1; corporate deployments should use a per-workspace catch-all instead |
 | Inbox free-text search covers subject + contact name/email only, **not message bodies** | Message-body search wants SQLite FTS5, which lands with the KB in Phase 6 | Add an FTS5 virtual table mirroring `inbox_message.body_text`, sync from `post_message`, `UNION` its hits into the `?q=` filter |

@@ -11,9 +11,11 @@ djangorestframework==3.15.2
 pytest==8.3.4
 pytest-django==4.9.0
 # Phase 4: email channel — IMAP client (imaplib is stdlib but low-level) and quoted-reply
-# stripping. SMTP goes through stdlib smtplib directly (no Django mail backend).
+# stripping. Outbound uses the Resend HTTP API (Railway blocks outbound SMTP ports; the
+# HTTP path also ships nicely on any PaaS).
 IMAPClient==3.0.1
 email-reply-parser==0.5.12
+resend==2.4.0
 # Phase 6: KB article HTML sanitisation (CLAUDE.md I7). Runs bleach.clean() on write
 # so templates can render body_html with |safe. FTS5 is SQLite-native (no dep).
 bleach==6.2.0

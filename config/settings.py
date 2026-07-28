@@ -241,6 +241,11 @@ SMTP_PASS = env("SMTP_PASS", "")
 # Hard timeout: agent replies must not hang the dashboard request (I8-adjacent).
 SMTP_TIMEOUT = int(env("SMTP_TIMEOUT", "8"))
 
+# Resend (HTTPS) outbound provider. Preferred over SMTP whenever RESEND_API_KEY is
+# set — Railway and most PaaS block outbound ports 25/465/587. When empty, send.py
+# falls back to smtplib using the SMTP_* settings above.
+RESEND_API_KEY = env("RESEND_API_KEY", "")
+
 
 # --- AI summarisation (Phase 7) --------------------------------------------
 
