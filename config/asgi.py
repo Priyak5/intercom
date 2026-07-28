@@ -8,6 +8,7 @@ Two jobs beyond routing:
      until later phases register them.
 """
 
+import asyncio
 import os
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
@@ -42,13 +43,32 @@ from channels.auth import AuthMiddlewareStack  # noqa: E402
 from channels.routing import ProtocolTypeRouter, URLRouter  # noqa: E402
 
 from apps.core.bootstrap import maybe_start_background_threads  # noqa: E402
+from apps.inbox import realtime  # noqa: E402
+from apps.inbox.routing import websocket_urlpatterns  # noqa: E402
 
 maybe_start_background_threads()
 
+
+async def lifespan_app(scope, receive, send):
+    """Capture the ASGI main event loop at startup so background threads (the sweeper,
+    and later the IMAP poller / job worker) can schedule broadcasts onto it via
+    realtime.broadcast. Uvicorn drives the lifespan protocol by default.
+    """
+    while True:
+        message = await receive()
+        if message["type"] == "lifespan.startup":
+            realtime.set_main_loop(asyncio.get_running_loop())
+            await send({"type": "lifespan.startup.complete"})
+        elif message["type"] == "lifespan.shutdown":
+            realtime.clear_main_loop()
+            await send({"type": "lifespan.shutdown.complete"})
+            return
+
+
 application = ProtocolTypeRouter(
     {
+        "lifespan": lifespan_app,
         "http": django_asgi_app,
-        # WebSocket consumers are registered in Phase 2; the router is empty for now.
-        "websocket": AuthMiddlewareStack(URLRouter([])),
+        "websocket": AuthMiddlewareStack(URLRouter(websocket_urlpatterns)),
     }
 )
