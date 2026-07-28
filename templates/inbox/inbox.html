@@ -6,11 +6,53 @@
   Reconnecting… new messages will send once you're back online.
 </div>
 <div class="inbox">
-  <aside class="conv-list" id="conv-list"></aside>
+  <aside class="conv-list-pane">
+    <div class="filter-bar">
+      <div class="filter-row">
+        <span class="filter-label">Status</span>
+        <button class="filter-pill" data-status="open">Open</button>
+        <button class="filter-pill" data-status="snoozed">Snoozed</button>
+        <button class="filter-pill" data-status="resolved">Resolved</button>
+        <button class="filter-pill" data-status="all">All</button>
+      </div>
+      <div class="filter-row">
+        <span class="filter-label">Channel</span>
+        <button class="filter-pill" data-channel="">All</button>
+        <button class="filter-pill" data-channel="chat">Chat</button>
+        <button class="filter-pill" data-channel="email">Email</button>
+      </div>
+      <div class="filter-row">
+        <select class="assignee-select" id="assignee-select">
+          <option value="">Anyone</option>
+          <option value="none">Unassigned</option>
+        </select>
+        <input class="search-input" id="search-input" type="search" placeholder="Search subject or contact…">
+      </div>
+    </div>
+    <div class="conv-list" id="conv-list" tabindex="0" aria-label="Conversations"></div>
+  </aside>
   <section class="thread-pane">
     <div class="thread-header">
       <span id="thread-title">Select a conversation</span>
-      <span id="peer-presence" class="peer-presence"></span>
+      <span class="thread-actions" id="thread-actions" style="display:none">
+        <span id="peer-presence" class="peer-presence"></span>
+        <select class="assign-menu" id="assign-menu"><option value="">Unassigned</option></select>
+        <div class="snooze-wrap">
+          <button class="thread-btn" id="snooze-btn" type="button">Snooze ▾</button>
+          <div class="snooze-menu" id="snooze-menu" hidden>
+            <button type="button" data-snooze="1h">In 1 hour</button>
+            <button type="button" data-snooze="4h">In 4 hours</button>
+            <button type="button" data-snooze="tomorrow">Tomorrow 9am</button>
+            <button type="button" data-snooze="monday">Next Monday 9am</button>
+            <label class="snooze-custom">
+              Custom:
+              <input type="datetime-local" id="snooze-custom">
+              <button type="button" data-snooze="custom">Set</button>
+            </label>
+          </div>
+        </div>
+        <button class="thread-btn resolve-btn" id="resolve-btn" type="button">Resolve</button>
+      </span>
     </div>
     <div class="thread" id="thread"></div>
     <div class="typing-indicator" id="typing-indicator"></div>

@@ -10,3 +10,7 @@ whitenoise==6.8.2
 djangorestframework==3.15.2
 pytest==8.3.4
 pytest-django==4.9.0
+# Phase 4: email channel — IMAP client (imaplib is stdlib but low-level) and quoted-reply
+# stripping. SMTP goes through stdlib smtplib directly (no Django mail backend).
+IMAPClient==3.0.1
+email-reply-parser==0.5.12

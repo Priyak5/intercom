@@ -81,6 +81,10 @@ def message_created_envelope(msg) -> dict:
             "body_text": msg.body_text,
             "client_msg_id": str(msg.client_msg_id),
             "created_at": msg.created_at.isoformat(),
+            # QUEUED at broadcast time for outbound email; the sender's REST response
+            # carries the post-SMTP state (SENT/FAILED). Other viewers may see QUEUED
+            # briefly — acceptable POC tradeoff.
+            "delivery_state": msg.delivery_state,
         },
     }
 
@@ -97,6 +101,7 @@ def conversation_updated_envelope(conv) -> dict:
             "subject": conv.subject,
             "assignee_id": str(conv.assignee_id) if conv.assignee_id else None,
             "last_message_at": conv.last_message_at.isoformat() if conv.last_message_at else None,
+            "snoozed_until": conv.snoozed_until.isoformat() if conv.snoozed_until else None,
             "contact_id": str(conv.contact_id),
         },
     }
@@ -169,6 +174,16 @@ def presence_actors(group: str) -> list[str]:
     now = time.monotonic()
     with _state_lock:
         return [a for a, exp in _presence.get(group, {}).items() if exp > now]
+
+
+def workspace_has_online_agent(workspace_id) -> bool:
+    """True if any AgentConsumer holds live presence on ws.<workspace_id>. Drives the
+    widget's online/offline UI: no agent → email capture instead of live chat.
+    """
+    for actor in presence_actors(ws_group(workspace_id)):
+        if actor.startswith("agent:"):
+            return True
+    return False
 
 
 def touch_typing(group: str, actor_key: str) -> None:

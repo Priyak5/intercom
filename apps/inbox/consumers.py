@@ -71,16 +71,19 @@ class AgentConsumer(_PresenceMixin, JsonWebsocketConsumer):
         self.conversation_id = None
         self.conv_group_name = None
         self.accept()
-        # ws group carries inbox-list updates (conversation.updated); presence starts when
-        # the agent actually opens a conversation.
+        # ws group carries inbox-list updates (conversation.updated); per-conversation
+        # presence starts when the agent opens a thread. Workspace-level presence is
+        # touched here so the widget can render an online/offline state (Phase 3).
         async_to_sync(self.channel_layer.group_add)(
             realtime.ws_group(self.workspace_id), self.channel_name
         )
+        realtime.touch_presence(realtime.ws_group(self.workspace_id), self.actor_key)
 
     def disconnect(self, code):
         if getattr(self, "conv_group_name", None):
             self._leave_conv(self.conv_group_name)
         if getattr(self, "workspace_id", None):
+            realtime.drop_presence(realtime.ws_group(self.workspace_id), self.actor_key)
             async_to_sync(self.channel_layer.group_discard)(
                 realtime.ws_group(self.workspace_id), self.channel_name
             )
@@ -94,6 +97,7 @@ class AgentConsumer(_PresenceMixin, JsonWebsocketConsumer):
         elif action == "read":
             self._read(content.get("seq"))
         elif action == "ping":
+            realtime.touch_presence(realtime.ws_group(self.workspace_id), self.actor_key)
             if self.conv_group_name:
                 realtime.touch_presence(self.conv_group_name, self.actor_key)
             self.send_json({"type": "pong"})

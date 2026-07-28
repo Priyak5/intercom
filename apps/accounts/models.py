@@ -67,6 +67,11 @@ class Workspace(BaseModel):
     public_key = models.CharField(max_length=48, unique=True, editable=False)
     hmac_secret = models.CharField(max_length=88, editable=False)
 
+    # Widget config (Phase 3). Empty allowed_origins = allow-any (documented dev default).
+    brand_color = models.CharField(max_length=9, default="#2563eb")
+    welcome_message = models.CharField(max_length=200, default="Hi! How can we help?")
+    allowed_origins = models.JSONField(default=list, blank=True)
+
     def __str__(self) -> str:
         return self.slug
 

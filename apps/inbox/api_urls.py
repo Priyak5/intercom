@@ -5,8 +5,10 @@ from django.urls import path
 from apps.inbox import api, widget_api
 
 urlpatterns = [
-    # Minimal visitor surface (Phase 2; promoted to apps/widget in Phase 3).
+    # Widget (visitor) surface — token-authed, no CSRF, CORS-open (Phase 3).
+    path("widget/config", widget_api.WidgetConfigView.as_view(), name="api_widget_config"),
     path("widget/session", widget_api.WidgetSessionView.as_view(), name="api_widget_session"),
+    path("widget/conversation", widget_api.WidgetConversationView.as_view(), name="api_widget_conversation"),
     path("widget/messages", widget_api.WidgetMessagesView.as_view(), name="api_widget_messages"),
     path("conversations", api.ConversationListView.as_view(), name="api_conversations"),
     path(

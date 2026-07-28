@@ -11,6 +11,7 @@ class InboxConfig(AppConfig):
         # (config/asgi.py), before maybe_start_background_threads(), so the factory is
         # present when bootstrap starts threads (only when RUN_BACKGROUND_THREADS=1).
         from apps.core import bootstrap
-        from apps.inbox import realtime
+        from apps.inbox import realtime, snoozer
 
         bootstrap.register_background_thread("sweeper", realtime.make_sweeper_thread)
+        bootstrap.register_background_thread("snooze_sweeper", snoozer.make_snooze_thread)

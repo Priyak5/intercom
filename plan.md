@@ -102,16 +102,21 @@ with no duplicates. Restart the container — full history persists.
 
 Requirement #2 delivery surface.
 
-- [ ] `static/widget/loader.js` — the single `<script>` tag, ~2KB, injects the iframe
-- [ ] `templates/widget/frame.html` — the real UI, isolated in the iframe
-- [ ] `GET /api/widget/config?key=` — brand colour, welcome message, online state
-- [ ] `POST /api/widget/session` — signed visitor token, origin allowlist check,
-      optional HMAC identity verification
-- [ ] Visitor token in `localStorage` → returning visitor sees prior conversation
-- [ ] `GET /api/widget/conversation` history restore
-- [ ] Offline state: no agent present → capture email instead of live chat
-- [ ] `demo/index.html` — standalone page with the widget installed **(graded checklist item)**
-- [ ] Mobile-responsive widget
+- [x] `static/widget/loader.js` — the single `<script>` tag, injects a bubble + lazy iframe
+- [x] `templates/inbox/widget_frame.html` — the real UI, isolated in the iframe (kept in
+      `apps/inbox/` alongside `widget_api.py`; CLAUDE.md §5 repo map updated accordingly)
+- [x] `GET /api/widget/config?key=` — brand colour, welcome message, online state
+      (online = `realtime.workspace_has_online_agent`, agent presence on `ws.<id>`)
+- [x] `POST /api/widget/session` — signed visitor token, origin allowlist check,
+      returns `visitor_id` for return-visitor reuse
+- [x] Visitor `{visitor_id}` in `localStorage` → returning visitor rejoins their open
+      conversation; token is reminted on each load (24h TTL is fine)
+- [x] `GET /api/widget/conversation` history restore
+- [x] Offline state: no agent present → capture email instead of live chat
+- [x] `demo/index.html` — standalone page with the widget installed **(graded checklist item)**
+- [x] Mobile-responsive widget (fullscreen iframe under 480px; `env(safe-area-inset-*)`)
+- [ ] HMAC identity verification — deferred, documented in README Known Limitations
+- [ ] IP rate limits on `/api/widget/*` — deferred to Phase 10 hardening
 
 **Gate:** `demo/index.html` served from a different origin loads the widget with one
 script tag, sends a message that appears in the dashboard in under a second, and the
@@ -123,25 +128,33 @@ conversation is still there after closing the browser and returning.
 
 Requirement #3. The second-heaviest graded criterion.
 
-- [ ] Mailbox provisioned (Gmail/Zoho app password), catch-all or plus-addressing verified
-- [ ] `mail/poller.py` — IMAP thread, IDLE if available else 30s poll,
-      UID cursor persisted **before** processing (no double-processing on restart)
-- [ ] Raw MIME stored on `Message.raw_mime` for replay/debugging
-- [ ] `mail/threading.py` — resolution in order:
+- [ ] Mailbox provisioned (Gmail/Zoho app password), catch-all or plus-addressing verified — deploy-time step
+- [x] `apps/mail/poller.py` — IMAPClient poll thread, 30s interval (no IDLE — POC
+      tradeoff documented in README), UID cursor persisted **before** processing
+      (`MailboxCursor.last_uid`). UIDVALIDITY change resets the cursor with a warning
+- [x] Raw MIME stored on `Message.raw_mime` for replay/debugging
+- [x] `apps/mail/threading.py` — resolution in order:
       1. `In-Reply-To` / `References` → existing `Message.email_message_id`
-      2. plus-address token `support+c{conv}.{hmac8}@`
+      2. plus-address token `support+c{conv}.{hmac8}@` (`apps/mail/addressing.py`)
       3. same sender + same normalised subject within 7 days
-      4. otherwise new conversation
-- [ ] Quoted-text stripping (`email-reply-parser`), HTML→text fallback
-- [ ] Attachment handling: store metadata, or explicitly skip and document it
-- [ ] `mail/send.py` — SMTP with explicit `Message-ID: <c{conv}.m{msg}@domain>`,
-      `In-Reply-To`, and a growing `References` chain
-- [ ] Inbound email creates/updates `Conversation(channel=email)` and broadcasts
-      `message.created` over WS
-- [ ] Reply from the dashboard sends a normal-looking email
+      4. otherwise new conversation (Conversation.objects.create — never reuses
+         an open conversation on subject miss)
+- [x] Quoted-text stripping (`email-reply-parser`), HTML→text fallback (stdlib
+      regex; BeautifulSoup avoided to keep deps light)
+- [x] Attachment handling: stripped, one-line placeholder appended, documented
+      Known Limitation
+- [x] `apps/mail/send.py` — SMTP with explicit
+      `Message-ID: <c{conv}.m{msg}@domain>`, `In-Reply-To`, growing `References`
+      chain (capped at 20); `Reply-To` carries the plus-address for path-2 return
+- [x] Inbound email → `Conversation(channel=email)` via `services.post_message`
+      → broadcast `message.created` on `AgentConsumer` (unchanged path)
+- [x] Reply from the dashboard sends via SMTP (bounded 8s timeout; `delivery_state`
+      flips SENT/FAILED, failure surfaced as `⚠ failed to send` on the bubble)
+- [x] `tests/test_threading.py` — 4 paths + reply-to-reply + idempotent replay
+      + bad-plus-token fallthrough + subject normalisation + addressing round-trip
+      (10 cases; +1 cross-workspace tenancy case)
 - [ ] SPF / DKIM / DMARC noted in README (deliverability is graded)
-- [ ] `tests/test_threading.py` — all four resolution paths, plus a reply-to-a-reply
-      staying in one conversation
+- [ ] End-to-end verification with a real mailbox (deploy-time)
 
 **Gate:** Send an email from a personal Gmail to the support address → appears as a
 conversation. Reply from the dashboard → arrives in Gmail as a normal threaded reply.
@@ -154,15 +167,23 @@ container mid-flight; no message is lost or duplicated.
 
 Requirement #4.
 
-- [ ] Single list combining chat + email, `channel` badge
-- [ ] Filters: status (open/snoozed/resolved), assignee, channel, free-text search
-- [ ] Assign / reassign, snooze with `snoozed_until`, resolve / reopen
-- [ ] Snooze expiry job (worker thread, every 60s) reopens conversations
-- [ ] `ConversationEvent`-style audit line in the thread for assign/status changes
-      (implemented as `sender_type=system` messages — no extra table)
-- [ ] Live list updates over `ws:{workspace}` — new conversation, new message,
-      assignment change, unread counts
-- [ ] Keyboard-navigable, responsive, empty and loading states
+- [x] Single list combining chat + email, `channel` badge (already done Phase 4)
+- [x] Filters: `status` (open/snoozed/resolved/all), `channel` (chat/email),
+      `assignee_id` (uuid or `none` = unassigned), `q` (LIKE on subject + contact
+      name/email — bodies deferred to FTS5 in Phase 6)
+- [x] Assign / reassign (thread-header dropdown), snooze with `snoozed_until`
+      (preset menu: 1h, 4h, tomorrow 9am, next Monday 9am, custom), resolve / reopen
+- [x] Snooze expiry sweeper — `apps/inbox/snoozer.py`, 60s interval, reuses
+      `services.set_status` so audit line + broadcast come for free
+- [x] Audit line in the thread for assign/status changes (existing
+      `sender_type=SYSTEM` message pattern — no extra table)
+- [x] Live list updates over `ws.<workspace>` — `conversation.updated` envelope
+      now carries `snoozed_until`; client refetches with the current filters
+- [x] Keyboard-navigable (↑/↓ or j/k, Enter, `/`, Esc), responsive filter bar,
+      empty ("No conversations match") and loading (skeleton) states
+- [x] Two new indexes: `(workspace, channel, -last_message_at)` and
+      `(status, snoozed_until)` — first backs channel filtering, second makes
+      the snooze sweeper cheap
 
 **Gate:** Two agents in the same workspace. One assigns and resolves; the other's list
 updates without refresh. Filters produce correct counts. `EXPLAIN QUERY PLAN` shows an

@@ -15,7 +15,8 @@ from apps.accounts.permissions import IsWorkspaceAdmin, IsWorkspaceMember
 
 
 class MemberSerializer(serializers.Serializer):
-    id = serializers.UUIDField()
+    id = serializers.UUIDField()                       # Membership.id (used by role/remove endpoints)
+    user_id = serializers.UUIDField(source="user.id")  # User.id (used by conversation assign)
     email = serializers.EmailField(source="user.email")
     name = serializers.CharField(source="user.name")
     role = serializers.CharField()

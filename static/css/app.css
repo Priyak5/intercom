@@ -9,6 +9,11 @@
 }
 
 * { box-sizing: border-box; }
+
+/* Force the `hidden` HTML attribute to win over our explicit `display: flex`/`grid`
+   rules (e.g. .snooze-menu, .thread-actions). Without this, `el.hidden = true` in JS
+   silently fails because the CSS cascade beats the UA default of `[hidden]{display:none}`. */
+[hidden] { display: none !important; }
 body {
   margin: 0;
   font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -72,8 +77,39 @@ table.members th { font-size: 0.8em; text-transform: uppercase; letter-spacing: 
   background: #fff4e5; color: #8a5a00; border: 1px solid #f0d9b0;
   padding: 0.5rem 0.9rem; border-radius: 6px; margin: 0 0 0.6rem;
 }
-.inbox { display: grid; grid-template-columns: 300px 1fr; gap: 1rem; height: 70vh; }
-.conv-list { overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+.inbox { display: grid; grid-template-columns: 320px 1fr; gap: 1rem; height: 70vh; }
+.conv-list-pane { display: flex; flex-direction: column; min-height: 0; }
+.conv-list { flex: 1; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; background: #fff; outline: none; }
+.conv-list:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+
+/* Filter bar above the conversation list */
+.filter-bar { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.4rem 0 0.6rem; }
+.filter-row { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
+.filter-label { font-size: 0.75em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-right: 0.15rem; }
+.filter-pill {
+  background: #fff; color: var(--fg); border: 1px solid var(--border);
+  padding: 0.2rem 0.55rem; margin: 0; border-radius: 999px;
+  font-size: 0.82em; cursor: pointer;
+}
+.filter-pill:hover { background: #f2f5fb; }
+.filter-pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.assignee-select { flex: 1 1 130px; min-width: 0; padding: 0.3rem 0.4rem; font-size: 0.85em; }
+.search-input { flex: 2 1 160px; min-width: 0; padding: 0.3rem 0.5rem; font-size: 0.9em; }
+
+/* Empty + loading list states */
+.conv-list .empty { padding: 1.2rem; color: var(--muted); text-align: center; font-size: 0.9em; }
+.skeleton {
+  height: 46px; margin: 0.4rem 0.6rem; border-radius: 6px;
+  background: linear-gradient(90deg, #eef0f4 0%, #f5f6f9 50%, #eef0f4 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.2s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* Keyboard focus highlight (visible even when a mouse-hover isn't on the row) */
+.conv-item.kb-focus { background: #e9f0ff; outline: 2px solid var(--accent); outline-offset: -2px; }
+.conv-item.snoozed { opacity: 0.85; }
+.conv-assignee, .conv-snoozed { font-size: 0.78em; color: var(--muted); }
 .conv-item { padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border); cursor: pointer; }
 .conv-item:hover { background: #f2f5fb; }
 .conv-item.active { background: #e9f0ff; }
@@ -90,6 +126,17 @@ table.members th { font-size: 0.8em; text-transform: uppercase; letter-spacing: 
 .msg-system { align-self: center; background: transparent; color: var(--muted); font-size: 0.85em; font-style: italic; }
 .msg.pending { opacity: 0.55; }
 .msg.failed { outline: 2px solid var(--danger); }
+.msg-failed { color: var(--danger); font-size: 0.8em; margin-left: 0.4rem; }
+
+/* Channel badges in the conversation list */
+.channel-badge {
+  display: inline-block; margin-left: 0.4rem; padding: 0 0.4rem;
+  border-radius: 8px; font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.04em;
+  background: #eef0f4; color: var(--muted);
+}
+.channel-badge.channel-email { background: #e6f0ff; color: #1d4ed8; }
+.channel-badge.channel-chat  { background: #eaf6ee; color: var(--ok); }
+.conv-subject { color: var(--muted); font-size: 0.85em; margin-top: 0.15rem; }
 .typing-indicator { min-height: 1.2em; padding: 0 0.9rem; color: var(--muted); font-size: 0.85em; font-style: italic; }
 .composer { display: flex; gap: 0.5rem; padding: 0.6rem; border-top: 1px solid var(--border); }
 .composer input { flex: 1; }
@@ -108,7 +155,38 @@ body.widget-demo .msg-agent { align-self: flex-start; background: #eef0f4; color
 body.widget-demo .msg-contact { align-self: flex-end; background: var(--accent); color: #fff; }
 
 /* Peer online status in the agent thread header */
-.thread-header { display: flex; align-items: center; justify-content: space-between; }
+.thread-header { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
 .peer-presence { font-size: 0.8em; font-weight: 400; }
 .peer-presence.online { color: var(--ok); }
 .peer-presence.offline { color: var(--muted); }
+
+/* Thread action bar (assignee / snooze / resolve) */
+.thread-actions { display: inline-flex; align-items: center; gap: 0.4rem; }
+.thread-btn {
+  background: #fff; color: var(--fg); border: 1px solid var(--border); margin: 0;
+  padding: 0.25rem 0.65rem; border-radius: 6px; font-size: 0.82em; cursor: pointer;
+}
+.thread-btn:hover { background: #f2f5fb; }
+.thread-btn.reopen { background: var(--ok); color: #fff; border-color: var(--ok); }
+.resolve-btn { background: var(--accent); color: #fff; border-color: var(--accent); }
+.resolve-btn:hover { filter: brightness(0.95); }
+.assign-menu { padding: 0.25rem 0.4rem; font-size: 0.82em; }
+
+/* Snooze popover */
+.snooze-wrap { position: relative; }
+.snooze-menu {
+  position: absolute; right: 0; top: calc(100% + 4px);
+  background: #fff; border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.10);
+  padding: 0.4rem; display: flex; flex-direction: column; gap: 0.25rem;
+  min-width: 200px; z-index: 40;
+}
+.snooze-menu button {
+  margin: 0; background: transparent; color: var(--fg); border: 0;
+  text-align: left; padding: 0.35rem 0.6rem; font-size: 0.9em; cursor: pointer;
+  border-radius: 4px;
+}
+.snooze-menu button:hover { background: #eef0f4; }
+.snooze-custom { display: flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.5rem; font-size: 0.8em; color: var(--muted); border-top: 1px solid var(--border); }
+.snooze-custom input { padding: 0.2rem 0.3rem; font-size: 0.85em; width: auto; }
+.snooze-custom button { padding: 0.2rem 0.5rem; background: var(--accent); color: #fff; font-size: 0.78em; }

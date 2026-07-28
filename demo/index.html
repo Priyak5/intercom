@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Acme Widgets — Demo Customer Site</title>
+  <style>
+    body { margin: 0; font: 16px/1.6 -apple-system, system-ui, sans-serif; color: #1f2430; background: #fafbfd; }
+    .hero { padding: 5rem 1.5rem; text-align: center; background: linear-gradient(180deg, #eef2ff, #fafbfd); }
+    .hero h1 { margin: 0 0 0.6rem; font-size: 2.4rem; }
+    .hero p { margin: 0; color: #6b7280; }
+    .wrap { max-width: 780px; margin: 0 auto; padding: 2rem 1.5rem; }
+    h2 { margin-top: 2rem; }
+    code { background: #eef0f4; padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.92em; }
+    .note { padding: 0.8rem 1rem; background: #fff8e1; border-left: 3px solid #f0b429; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <section class="hero">
+    <h1>Acme Widgets</h1>
+    <p>The best widgets, since 1998. (Demo customer site to prove the embed works cross-origin.)</p>
+  </section>
+
+  <div class="wrap">
+    <h2>What this page is for</h2>
+    <p>
+      This is a plain HTML page served from a different origin than the support app. The
+      one <code>&lt;script&gt;</code> tag below installs the chat widget. Open it, send a
+      message, refresh — the transcript persists.
+    </p>
+
+    <h2>How to point it at your instance</h2>
+    <p>
+      Replace <code>data-key</code> with your workspace's <code>public_key</code>
+      (from <code>/api/auth/me</code> or the dashboard). Replace
+      <code>data-endpoint</code> with the URL of your deployed app (e.g.
+      <code>https://app.example.com</code>). For local testing, omit
+      <code>data-endpoint</code> and serve this page from any HTTP server whose origin
+      differs from the app's (<code>python -m http.server 5500</code> in this directory
+      works).
+    </p>
+
+    <div class="note">
+      Cross-origin note: the loader will fetch <code>/api/widget/config</code> and open
+      an iframe against <code>data-endpoint</code>. The widget endpoints answer with
+      permissive CORS since no cookies are used — only a signed token in a header.
+    </div>
+
+    <h2>Try it</h2>
+    <p>Click the bubble in the bottom-right corner ↘</p>
+  </div>
+
+  <!-- The single script tag customers add. Set data-key to your workspace public_key. -->
+  <script
+    src="http://localhost:8000/static/widget/loader.js"
+    data-key="REPLACE_WITH_WORKSPACE_PUBLIC_KEY"
+    data-endpoint="http://localhost:8000"
+    async></script>
+</body>
+</html>

@@ -132,6 +132,18 @@ def post_message(
         realtime.conversation_updated_envelope(conversation),
     )
     log.info("message_posted conv_id=%s seq=%s sender=%s", conversation.id, seq, sender_type)
+
+    # 6. Side-effect: an agent replying to an email conversation actually goes out over
+    # SMTP. Local import + swallow — DB write is truth (I3), SMTP failure marks the row
+    # FAILED but must never re-raise into the caller (agent's HTTP request).
+    if conversation.channel == Channel.EMAIL and sender_type == SenderType.AGENT:
+        try:
+            from apps.mail import send as mail_send
+
+            mail_send.send_reply(message=msg)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("smtp_hook_error conv_id=%s msg_id=%s error=%r", conversation.id, msg.id, exc)
+
     return msg
 
 
@@ -161,19 +173,44 @@ def assign(*, conversation: Conversation, assignee, actor) -> Conversation:
     return conversation
 
 
-def set_status(*, conversation: Conversation, status: str, actor) -> Conversation:
+def set_status(
+    *, conversation: Conversation, status: str, actor, snoozed_until=None
+) -> Conversation:
+    """Flip a conversation between OPEN/SNOOZED/RESOLVED. `snoozed_until` is stamped
+    on SNOOZED and cleared on any other transition (so a reopen never leaves stale
+    wake-up time behind). Audit trail + broadcast rides `post_message` (I5).
+    """
     if status not in ConversationStatus.values:
         raise exc.ValidationError(f"Invalid status: {status!r}")
+    if status == ConversationStatus.SNOOZED:
+        if snoozed_until is None:
+            raise exc.ValidationError("snoozed_until is required when status=snoozed.")
+        if snoozed_until <= timezone.now():
+            raise exc.ValidationError("snoozed_until must be in the future.")
+
     conversation.status = status
     fields = ["status", "updated_at"]
+    if status == ConversationStatus.SNOOZED:
+        conversation.snoozed_until = snoozed_until
+        fields.append("snoozed_until")
+    else:
+        # Reopen/resolve clears any pending wake-up.
+        if conversation.snoozed_until is not None:
+            conversation.snoozed_until = None
+            fields.append("snoozed_until")
     if status == ConversationStatus.RESOLVED:
         conversation.resolved_at = timezone.now()
         fields.append("resolved_at")
     conversation.save(update_fields=fields)
+
+    if status == ConversationStatus.SNOOZED:
+        audit = f"Snoozed until {snoozed_until.isoformat(timespec='minutes')}"
+    else:
+        audit = f"Conversation {status}"
     post_message(
         conversation=conversation,
         sender_type=SenderType.SYSTEM,
-        body_text=f"Conversation {status}",
+        body_text=audit,
         client_msg_id=uuid.uuid4(),
         sender_user=actor,
     )
@@ -182,6 +219,33 @@ def set_status(*, conversation: Conversation, status: str, actor) -> Conversatio
         conversation.id, status, getattr(actor, "id", None),
     )
     return conversation
+
+
+def reopen_expired_snoozes() -> int:
+    """Called by the snooze sweeper (~ every 60s). Any Conversation whose
+    `snoozed_until` is now in the past flips back to OPEN via the ordinary service
+    path, so listeners get the same `conversation.updated` broadcast as an agent
+    click. Returns the number flipped.
+    """
+    from apps.inbox.models import Conversation as _C
+
+    now = timezone.now()
+    expired_ids = list(
+        _C.objects.filter(status=ConversationStatus.SNOOZED, snoozed_until__lte=now)
+        .values_list("id", flat=True)
+    )
+    for cid in expired_ids:
+        conv = _C.objects.filter(id=cid).first()
+        if conv is None:
+            continue
+        try:
+            # No actor — a system flip; audit line records "Conversation open".
+            set_status(conversation=conv, status=ConversationStatus.OPEN, actor=None)
+        except Exception as exc:  # noqa: BLE001 — one bad row must not stop the sweep
+            log.warning("snooze_reopen_error conv_id=%s error=%r", cid, exc)
+    if expired_ids:
+        log.info("snooze_reopened count=%s", len(expired_ids))
+    return len(expired_ids)
 
 
 def mark_read(*, conversation: Conversation, reader: str, upto_seq: int) -> Conversation:

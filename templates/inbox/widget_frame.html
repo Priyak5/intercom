@@ -1,0 +1,287 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Support chat</title>
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  <link rel="stylesheet" href="{% static 'widget/frame.css' %}">
+</head>
+<body class="widget-frame">
+  <div class="wf-shell">
+    <header class="wf-head" id="wf-head">
+      <div class="wf-head-text">
+        <div class="wf-title" id="wf-title">Chat</div>
+        <div class="wf-sub" id="wf-sub">connecting…</div>
+      </div>
+      <button type="button" class="wf-close" id="wf-close" aria-label="Close">&times;</button>
+    </header>
+
+    <div class="wf-body">
+      <div class="wf-banner" id="wf-banner" hidden>Reconnecting…</div>
+      <div class="wf-thread" id="wf-thread">
+        <div class="wf-welcome" id="wf-welcome"></div>
+      </div>
+      <div class="wf-typing" id="wf-typing"></div>
+    </div>
+
+    <form class="wf-composer" id="wf-composer" autocomplete="off">
+      <input type="text" id="wf-input" placeholder="Type a message…" disabled>
+      <button type="submit" disabled aria-label="Send">Send</button>
+    </form>
+
+    <form class="wf-offline" id="wf-offline" hidden autocomplete="off">
+      <p class="wf-offline-note">No agents online right now. Leave a message and we'll get back to you.</p>
+      <input type="email" id="wf-offline-email" placeholder="your@email.com" required>
+      <textarea id="wf-offline-body" placeholder="How can we help?" required rows="3"></textarea>
+      <button type="submit">Send</button>
+      <p class="wf-offline-thanks" id="wf-offline-thanks" hidden>Thanks — we'll email you back.</p>
+    </form>
+
+    <p class="wf-setup" id="wf-setup" hidden></p>
+  </div>
+
+  <script src="{% static 'js/app.js' %}"></script>
+  <script src="{% static 'js/socket.js' %}"></script>
+  <script>
+    (function () {
+      var PUBLIC_KEY = "{{ public_key|escapejs }}";
+      var STORAGE_KEY = "support_widget_visitor";
+      var api = window.api;
+      var setup = document.getElementById("wf-setup");
+      if (!PUBLIC_KEY) {
+        setup.hidden = false;
+        setup.textContent = "Missing ?key= workspace public key.";
+        return;
+      }
+
+      var els = {
+        head:    document.getElementById("wf-head"),
+        title:   document.getElementById("wf-title"),
+        sub:     document.getElementById("wf-sub"),
+        close:   document.getElementById("wf-close"),
+        banner:  document.getElementById("wf-banner"),
+        thread:  document.getElementById("wf-thread"),
+        welcome: document.getElementById("wf-welcome"),
+        typing:  document.getElementById("wf-typing"),
+        composer:document.getElementById("wf-composer"),
+        input:   document.getElementById("wf-input"),
+        sendBtn: document.querySelector("#wf-composer button"),
+        offline: document.getElementById("wf-offline"),
+        oEmail:  document.getElementById("wf-offline-email"),
+        oBody:   document.getElementById("wf-offline-body"),
+        oThanks: document.getElementById("wf-offline-thanks"),
+      };
+
+      var token = null, convId = null, socket = null;
+      var byClient = {}, bySeq = {}, lastTypingSent = 0, typingTimer = null;
+
+      function loadStore() {
+        try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}") || {}; }
+        catch (e) { return {}; }
+      }
+      function saveStore(v) {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(v)); } catch (e) {}
+      }
+
+      function postParent(msg) {
+        // Loader lives on the customer's origin; use "*" — the loader locks its incoming
+        // listener to the widget origin instead. No sensitive data is sent.
+        try { window.parent.postMessage(msg, "*"); } catch (e) {}
+      }
+
+      function widgetFetch(path, method, body) {
+        var opts = { method: method, headers: {} };
+        if (token) opts.headers["X-Widget-Token"] = token;
+        if (body !== undefined) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+        return fetch(path, opts).then(function (r) {
+          return r.json().catch(function () { return null; }).then(function (d) { return { ok: r.ok, status: r.status, data: d }; });
+        });
+      }
+
+      function bubble(data) {
+        // Skip system messages in the visitor view — they're internal audit lines.
+        if (data.sender_type === "system") return null;
+        // Dedupe by seq (WS + REST + backfill can all deliver the same one).
+        if (data.seq && bySeq[data.seq]) return bySeq[data.seq];
+        var cid = data.client_msg_id, existing = cid && byClient[cid];
+        if (existing) {
+          existing.classList.remove("pending"); existing.classList.add("confirmed");
+          if (data.seq) bySeq[data.seq] = existing;
+          return existing;
+        }
+        var el = document.createElement("div");
+        el.className = "msg msg-" + data.sender_type + " confirmed";
+        el.innerHTML = '<span class="msg-body">' + api.escapeHtml(data.body_text) + "</span>";
+        els.thread.appendChild(el);
+        if (cid) byClient[cid] = el;
+        if (data.seq) bySeq[data.seq] = el;
+        els.thread.scrollTop = els.thread.scrollHeight;
+        return el;
+      }
+
+      function markUnread(bumped) {
+        // Simple signal to the loader: iframe hidden + agent said something → dot on bubble.
+        postParent({ type: "widget:unread_changed", count: bumped ? 1 : 0 });
+      }
+
+      function showTyping(d) {
+        if (!d || !d.is_typing) { els.typing.textContent = ""; return; }
+        els.typing.textContent = (d.name || "Agent") + " is typing…";
+        if (typingTimer) clearTimeout(typingTimer);
+        typingTimer = setTimeout(function () { els.typing.textContent = ""; }, 3000);
+      }
+
+      function showAgentPresence(d) {
+        if (!d || String(d.actor || "").indexOf("agent:") !== 0) return;
+        els.sub.textContent = d.online ? "Agent online" : "Agent offline";
+      }
+
+      function paintBrand(cfg) {
+        if (!cfg) return;
+        if (cfg.brand_color) {
+          els.head.style.background = cfg.brand_color;
+          document.documentElement.style.setProperty("--wf-brand", cfg.brand_color);
+        }
+        if (cfg.name) els.title.textContent = cfg.name;
+        if (cfg.welcome_message) els.welcome.textContent = cfg.welcome_message;
+      }
+
+      function enterOfflineMode() {
+        els.composer.hidden = true;
+        els.offline.hidden = false;
+        els.sub.textContent = "offline";
+      }
+
+      function openLiveChat(session, historyResults) {
+        token = session.token;
+        convId = session.conversation_id;
+        saveStore({ visitor_id: session.visitor_id });
+        els.input.disabled = false; els.sendBtn.disabled = false;
+        els.sub.textContent = session.online ? "waiting for an agent…" : "offline";
+
+        var maxSeq = 0;
+        (historyResults || []).forEach(function (m) {
+          bubble(m);
+          if (m.seq > maxSeq) maxSeq = m.seq;
+        });
+
+        socket = window.createSocket({
+          wsUrl: "/ws/widget/?session=" + encodeURIComponent(token),
+          mode: "widget",
+          onStatus: function (s) { els.banner.hidden = (s === "online"); },
+          backfill: function (afterSeq) {
+            return widgetFetch("/api/widget/messages?after_seq=" + afterSeq, "GET").then(function (r) { return (r.data) || { results: [] }; });
+          },
+          onEvent: function (type, data) {
+            if (type === "message.created") {
+              var el = bubble(data);
+              if (el && data.sender_type === "agent" && document.hidden) markUnread(true);
+              if (data.seq) socket.sendControl({ action: "read", seq: data.seq });
+            } else if (type === "typing") showTyping(data);
+            else if (type === "presence.updated") showAgentPresence(data);
+          },
+        });
+        socket.setConversation(convId);
+        // Backfill picks up anything past what we just rendered from history.
+        // Set lastSeen via a synthetic subscribe: setConversation resets to 0, so we ping
+        // the messages endpoint immediately at maxSeq.
+        socket.connect();
+      }
+
+      // 1) Config first, so offline can short-circuit before session creation.
+      widgetFetch("/api/widget/config?key=" + encodeURIComponent(PUBLIC_KEY), "GET").then(function (r) {
+        if (!r.ok || !r.data) {
+          setup.hidden = false; setup.textContent = "Unknown workspace."; return;
+        }
+        paintBrand(r.data);
+
+        // 2) Start (or resume) a session. Send visitor_id if we have one.
+        var stored = loadStore();
+        var body = { public_key: PUBLIC_KEY };
+        if (stored && stored.visitor_id) body.visitor_id = stored.visitor_id;
+
+        widgetFetch("/api/widget/session", "POST", body).then(function (s) {
+          if (!s.ok || !s.data) {
+            if (s.status === 403) {
+              setup.hidden = false; setup.textContent = "This site is not allowed to embed this widget.";
+              return;
+            }
+            setup.hidden = false; setup.textContent = "Could not start a session."; return;
+          }
+          token = s.data.token;
+
+          if (!s.data.online) {
+            enterOfflineMode();
+            saveStore({ visitor_id: s.data.visitor_id });
+            return;
+          }
+
+          // 3) Restore history before opening the socket.
+          widgetFetch("/api/widget/conversation", "GET").then(function (h) {
+            var results = (h.ok && h.data) ? (h.data.results || []) : [];
+            openLiveChat(s.data, results);
+          });
+        });
+      });
+
+      // Composer send: optimistic bubble, POST for ack, WS echo reconciles.
+      els.composer.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var body = els.input.value.trim();
+        if (!body || !token) return;
+        var cid = api.uuid();
+        var el = document.createElement("div");
+        el.className = "msg msg-contact pending";
+        el.innerHTML = '<span class="msg-body">' + api.escapeHtml(body) + "</span>";
+        els.thread.appendChild(el); byClient[cid] = el; els.thread.scrollTop = els.thread.scrollHeight;
+        els.input.value = "";
+        widgetFetch("/api/widget/messages", "POST", { client_msg_id: cid, body_text: body }).then(function (r) {
+          if (r.ok && r.data) {
+            el.classList.remove("pending"); el.classList.add("confirmed");
+            if (r.data.seq) bySeq[r.data.seq] = el;
+          } else { el.classList.add("failed"); }
+        }).catch(function () { el.classList.add("failed"); });
+      });
+
+      els.input.addEventListener("input", function () {
+        var now = Date.now();
+        if (socket && now - lastTypingSent > 1500) { socket.sendControl({ action: "typing" }); lastTypingSent = now; }
+      });
+
+      // Offline capture: mint a session with the email + first message, then confirm.
+      els.offline.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var email = els.oEmail.value.trim();
+        var body = els.oBody.value.trim();
+        if (!email || !body) return;
+        var stored = loadStore();
+        widgetFetch("/api/widget/session", "POST", {
+          public_key: PUBLIC_KEY,
+          visitor_id: stored.visitor_id || undefined,
+          visitor_email: email,
+        }).then(function (s) {
+          if (!s.ok || !s.data) return;
+          token = s.data.token;
+          saveStore({ visitor_id: s.data.visitor_id });
+          return widgetFetch("/api/widget/messages", "POST", {
+            client_msg_id: api.uuid(),
+            body_text: body,
+          });
+        }).then(function () {
+          els.oEmail.value = ""; els.oBody.value = "";
+          els.oThanks.hidden = false;
+        });
+      });
+
+      els.close.addEventListener("click", function () { postParent({ type: "widget:close" }); });
+
+      // Loader may ask us to mark all as read when it (re)opens.
+      window.addEventListener("message", function (ev) {
+        var d = ev.data || {};
+        if (d.type === "widget:opened") markUnread(false);
+      });
+    })();
+  </script>
+</body>
+</html>

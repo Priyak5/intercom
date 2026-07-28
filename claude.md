@@ -154,19 +154,20 @@ management commands don't start the worker or the IMAP poller.
 config/          settings.py (one file, env-driven), urls.py, asgi.py (thread boot + assert)
 apps/core/       BaseModel, tenant middleware, Job model, worker.py, health.py
 apps/accounts/   User, Workspace, Membership, Invite, Domain, auth views, permissions
-apps/inbox/      Contact, Conversation, Message, services.py, consumers.py, ai.py, prompts.py
-apps/widget/     public visitor endpoints, session token auth, widget.js, iframe view
+apps/inbox/      Contact, Conversation, Message, services.py, consumers.py, ai.py, prompts.py,
+                 widget_api.py (visitor endpoints), widget_auth.py (signed tokens)
 apps/mail/       poller.py (IMAP thread), threading.py (resolution), send.py (SMTP)
 apps/kb/         Category, Article, FTS5 sync, admin views, public views, search.py
-templates/       base.html, auth/, inbox/, kb_admin/, public_kb/, widget/frame.html
-static/          css/app.css, js/socket.js, js/inbox.js, widget/loader.js
+templates/       base.html, auth/, inbox/ (incl. widget_frame.html), kb_admin/, public_kb/
+static/          css/app.css, js/socket.js, js/inbox.js, widget/loader.js, widget/frame.css
 demo/            index.html — standalone page with widget installed (graded checklist item)
 data/            volume: db.sqlite3, caddy certs. Never committed.
 tests/           test_ordering.py, test_threading.py, test_tenancy.py, test_idempotency.py
 ```
 
-Realtime and AI are **files inside `inbox`**, not separate apps. Six apps total.
-Do not create a seventh without a reason written in `architecture.md`.
+Realtime, AI, and the visitor widget surface are **files inside `inbox`**, not separate
+apps. Five apps total (core, accounts, inbox, mail, kb). Do not add another without a
+reason written in `architecture.md`.
 
 ---
 

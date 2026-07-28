@@ -15,7 +15,7 @@ from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsWorkspaceMember
 from apps.inbox import services
-from apps.inbox.models import Conversation, ConversationStatus, Message, SenderType
+from apps.inbox.models import Channel, Conversation, ConversationStatus, Message, SenderType
 
 log = logging.getLogger("inbox.api")
 
@@ -30,6 +30,7 @@ class MessageSerializer(serializers.Serializer):
     body_text = serializers.CharField()
     client_msg_id = serializers.UUIDField()
     created_at = serializers.DateTimeField()
+    delivery_state = serializers.CharField()
 
 
 class ConversationSerializer(serializers.Serializer):
@@ -41,11 +42,16 @@ class ConversationSerializer(serializers.Serializer):
     last_seq = serializers.IntegerField()
     last_message_at = serializers.DateTimeField(allow_null=True)
     agent_last_read_seq = serializers.IntegerField()
+    snoozed_until = serializers.DateTimeField(allow_null=True)
     contact_name = serializers.SerializerMethodField()
+    contact_email = serializers.SerializerMethodField()
     unread = serializers.SerializerMethodField()
 
     def get_contact_name(self, obj):
         return obj.contact.name or obj.contact.email or "Visitor"
+
+    def get_contact_email(self, obj):
+        return obj.contact.email or ""
 
     def get_unread(self, obj):
         return max(0, obj.last_seq - obj.agent_last_read_seq)
@@ -81,9 +87,39 @@ class ConversationListView(APIView):
             .annotate(ots=Coalesce("last_message_at", "created_at"))
             .order_by("-ots", "-id")
         )
+
+        # Status filter. Absent → open + snoozed (hide resolved by default so a busy
+        # inbox doesn't drown in resolved conversations).
         status = request.query_params.get("status")
-        if status in ConversationStatus.values:
+        if status == "all":
+            pass
+        elif status in ConversationStatus.values:
             qs = qs.filter(status=status)
+        else:
+            qs = qs.filter(status__in=[ConversationStatus.OPEN, ConversationStatus.SNOOZED])
+
+        # Channel filter.
+        channel = request.query_params.get("channel")
+        if channel in Channel.values:
+            qs = qs.filter(channel=channel)
+
+        # Assignee filter. "none" means unassigned; a UUID means that member.
+        assignee_id = request.query_params.get("assignee_id")
+        if assignee_id == "none":
+            qs = qs.filter(assignee__isnull=True)
+        elif assignee_id:
+            qs = qs.filter(assignee_id=assignee_id)
+
+        # Free-text search on subject + contact name/email (I6-safe: workspace filter
+        # is already applied above). Bodies aren't searched here — FTS5 lands with the
+        # KB in Phase 6, documented as a Known Limitation.
+        q = (request.query_params.get("q") or "").strip()
+        if q:
+            qs = qs.filter(
+                Q(subject__icontains=q)
+                | Q(contact__name__icontains=q)
+                | Q(contact__email__icontains=q)
+            )
 
         cursor = request.query_params.get("after")
         if cursor:
@@ -174,5 +210,22 @@ class StatusView(APIView):
         conv = _get_conversation(request, conversation_id)
         if conv is None:
             return Response({"error": "not_found"}, status=404)
-        services.set_status(conversation=conv, status=request.data.get("status"), actor=request.user)
-        return Response({"status": conv.status})
+        status = request.data.get("status")
+        snoozed_until = None
+        raw = request.data.get("snoozed_until")
+        if raw:
+            snoozed_until = parse_datetime(raw)
+            if snoozed_until is None:
+                return Response(
+                    {"error": "validation", "detail": "snoozed_until is not a valid ISO datetime"},
+                    status=400,
+                )
+        services.set_status(
+            conversation=conv, status=status, actor=request.user, snoozed_until=snoozed_until
+        )
+        return Response(
+            {
+                "status": conv.status,
+                "snoozed_until": conv.snoozed_until.isoformat() if conv.snoozed_until else None,
+            }
+        )

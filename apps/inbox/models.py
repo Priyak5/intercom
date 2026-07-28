@@ -101,6 +101,10 @@ class Conversation(BaseModel):
         indexes = [
             models.Index(fields=["workspace", "status", "-last_message_at"]),
             models.Index(fields=["workspace", "assignee", "-last_message_at"]),
+            # Phase 5: channel filter on the unified inbox list.
+            models.Index(fields=["workspace", "channel", "-last_message_at"]),
+            # Phase 5: snoozer scans (status=snoozed AND snoozed_until <= now) every 60s.
+            models.Index(fields=["status", "snoozed_until"], name="idx_conv_snooze_expiry"),
         ]
 
     def __str__(self) -> str:

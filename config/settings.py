@@ -68,6 +68,7 @@ INSTALLED_APPS = [
     "apps.core",
     "apps.accounts",
     "apps.inbox",
+    "apps.mail",
 ]
 
 MIDDLEWARE = [
@@ -215,6 +216,29 @@ INVITE_TTL_HOURS = int(env("INVITE_TTL_HOURS", "168"))  # 7 days
 
 # Widget visitor-session token lifetime (Phase 2 minimal surface; Phase 3 hardens it).
 WIDGET_TOKEN_TTL_HOURS = int(env("WIDGET_TOKEN_TTL_HOURS", "24"))
+
+
+# --- email channel (Phase 4) ------------------------------------------------
+
+# The IMAP poller polls a single mailbox; every inbound email that isn't threaded via
+# In-Reply-To or a plus-token is routed to this workspace (empty => first Workspace
+# at poll time). Documented Known Limitation: one workspace per deploy for email.
+MAIL_WORKSPACE_ID = env("MAIL_WORKSPACE_ID", "")
+MAIL_DOMAIN = env("MAIL_DOMAIN", "localhost")
+MAIL_FROM = env("MAIL_FROM", DEFAULT_FROM_EMAIL)
+
+IMAP_HOST = env("IMAP_HOST", "")
+IMAP_PORT = int(env("IMAP_PORT", "993"))
+IMAP_USER = env("IMAP_USER", "")
+IMAP_PASS = env("IMAP_PASS", "")
+IMAP_POLL_INTERVAL = int(env("IMAP_POLL_INTERVAL", "30"))
+
+SMTP_HOST = env("SMTP_HOST", "")
+SMTP_PORT = int(env("SMTP_PORT", "587"))
+SMTP_USER = env("SMTP_USER", "")
+SMTP_PASS = env("SMTP_PASS", "")
+# Hard timeout: agent replies must not hang the dashboard request (I8-adjacent).
+SMTP_TIMEOUT = int(env("SMTP_TIMEOUT", "8"))
 
 
 # --- logging ----------------------------------------------------------------

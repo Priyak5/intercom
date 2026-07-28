@@ -1,8 +1,16 @@
-"""Minimal visitor (widget) surface — Phase 2. Token-authed, no session/CSRF.
+"""Visitor (widget) surface — Phase 3. Token-authed, no session/CSRF.
 
-Just enough for the agent↔visitor reconnect gate: mint a signed session, list/post
-messages as the contact. Phase 3 promotes this to `apps/widget` with the iframe/loader,
-config endpoint, origin allowlist, HMAC identity, and rate limits.
+Endpoints:
+  GET  /api/widget/config?key=<public_key>   — brand + online state (no token)
+  POST /api/widget/session                   — mint token; accepts visitor_id for reuse
+  GET  /api/widget/conversation              — history restore (token-authed)
+  GET  /api/widget/messages?after_seq=       — incremental messages (token-authed)
+  POST /api/widget/messages                  — send a message (token-authed, idempotent)
+
+Tenancy (I6) is derived from the request: `public_key` selects the workspace on session
+create; the signed token binds workspace+contact+conversation afterwards. A client-sent
+`visitor_id` is verified against `workspace` before reuse, so a token/contact from another
+tenant never crosses over.
 """
 
 import logging
@@ -12,11 +20,33 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.models import Workspace
-from apps.inbox import services, widget_auth
+from apps.inbox import realtime, services, widget_auth
 from apps.inbox.api import MessageSerializer
-from apps.inbox.models import Contact, Conversation, Message, SenderType
+from apps.inbox.models import Contact, Conversation, ConversationStatus, Message, SenderType
 
 log = logging.getLogger("inbox.widget")
+
+
+def _cors(response, request):
+    """Same-origin browsers embed the widget cross-origin, so widget endpoints must reply
+    with permissive CORS. No credentials are used (token in a header, not a cookie), so
+    `*` is safe.
+    """
+    origin = request.headers.get("Origin", "*")
+    response["Access-Control-Allow-Origin"] = origin if origin != "null" else "*"
+    response["Vary"] = "Origin"
+    response["Access-Control-Allow-Headers"] = "Content-Type, X-Widget-Token"
+    response["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    return response
+
+
+def _origin_allowed(workspace: Workspace, request) -> bool:
+    """Origin allowlist check. Empty list = allow-any (dev default, README-documented)."""
+    allowed = workspace.allowed_origins or []
+    if not allowed:
+        return True
+    origin = request.headers.get("Origin", "")
+    return origin in allowed
 
 
 def _resolve_conversation(request):
@@ -42,39 +72,113 @@ def _resolve_conversation(request):
     )
 
 
-class WidgetSessionView(APIView):
-    authentication_classes = []  # no session/CSRF; token-authed surface
+class _WidgetView(APIView):
+    """Shared widget-endpoint base: no auth, allow-any, CORS on every response."""
+
+    authentication_classes = []
     permission_classes = [AllowAny]
 
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        return _cors(response, request)
+
+    def options(self, request, *args, **kwargs):
+        return Response(status=204)
+
+
+class WidgetConfigView(_WidgetView):
+    """Public read of widget branding + online state. No token; safe to cache briefly."""
+
+    def get(self, request):
+        workspace = Workspace.objects.filter(public_key=request.query_params.get("key", "")).first()
+        if workspace is None:
+            return Response({"error": "unknown_workspace"}, status=404)
+        return Response(
+            {
+                "name": workspace.name,
+                "brand_color": workspace.brand_color,
+                "welcome_message": workspace.welcome_message,
+                "online": realtime.workspace_has_online_agent(workspace.id),
+            }
+        )
+
+
+class WidgetSessionView(_WidgetView):
     def post(self, request):
         workspace = Workspace.objects.filter(public_key=request.data.get("public_key")).first()
         if workspace is None:
             return Response({"error": "unknown_workspace"}, status=404)
-        # Phase 2: a fresh anonymous contact + conversation per session. Returning-visitor
-        # reuse (localStorage token) is Phase 3.
-        contact = Contact.objects.create(workspace=workspace)
+        if not _origin_allowed(workspace, request):
+            log.info(
+                "widget_origin_denied workspace_id=%s origin=%s",
+                workspace.id, request.headers.get("Origin", ""),
+            )
+            return Response({"error": "origin_not_allowed"}, status=403)
+
+        # Returning visitor: reuse the contact if it belongs to this workspace. If the id
+        # is unknown/tampered, silently fall through to a fresh contact — never leak that
+        # a Contact exists in a different workspace (I6).
+        contact = None
+        visitor_id = (request.data.get("visitor_id") or "").strip()
+        if visitor_id:
+            contact = Contact.objects.filter(id=visitor_id, workspace=workspace).first()
+
+        # Optional email capture from the offline-form branch: persist on the Contact so
+        # a returning agent can reply by email once the poller is wired (Phase 4).
+        email = (request.data.get("visitor_email") or "").strip()
+
+        if contact is None:
+            contact = Contact.objects.create(workspace=workspace, email=email)
+        elif email and not contact.email:
+            contact.email = email
+            contact.save(update_fields=["email", "updated_at"])
+
         conversation = services.get_or_create_conversation(workspace=workspace, contact=contact)
         token = widget_auth.mint_visitor_token(
             workspace=workspace, contact=contact, conversation=conversation
         )
         log.info(
-            "widget_session workspace_id=%s conv_id=%s contact_id=%s",
-            workspace.id, conversation.id, contact.id,
+            "widget_session workspace_id=%s conv_id=%s contact_id=%s reused=%s",
+            workspace.id, conversation.id, contact.id, bool(visitor_id and contact),
         )
         return Response(
             {
                 "token": token,
+                "visitor_id": str(contact.id),
                 "conversation_id": str(conversation.id),
-                "workspace": {"name": workspace.name},
+                "workspace": {
+                    "name": workspace.name,
+                    "brand_color": workspace.brand_color,
+                    "welcome_message": workspace.welcome_message,
+                },
+                "online": realtime.workspace_has_online_agent(workspace.id),
             },
             status=201,
         )
 
 
-class WidgetMessagesView(APIView):
-    authentication_classes = []
-    permission_classes = [AllowAny]
+class WidgetConversationView(_WidgetView):
+    """Full conversation restore for a returning visitor. The iframe calls this on load
+    before opening the socket so history is on-screen instantly.
+    """
 
+    def get(self, request):
+        conv = _resolve_conversation(request)
+        if conv is None:
+            return Response({"error": "unauthorized"}, status=401)
+        msgs = conv.messages.order_by("seq")
+        return Response(
+            {
+                "conversation_id": str(conv.id),
+                "last_seq": conv.last_seq,
+                "status": conv.status,
+                "assignee_name": (conv.assignee.name or conv.assignee.email) if conv.assignee_id else None,
+                "results": MessageSerializer(msgs, many=True).data,
+            }
+        )
+
+
+class WidgetMessagesView(_WidgetView):
     def get(self, request):
         conv = _resolve_conversation(request)
         if conv is None:
