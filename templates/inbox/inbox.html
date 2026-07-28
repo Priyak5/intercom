@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Inbox{% endblock %}
+{% block content %}
+<div id="offline-banner" class="offline-banner" style="display:none">
+  Reconnecting… new messages will send once you're back online.
+</div>
+<div class="inbox">
+  <aside class="conv-list" id="conv-list"></aside>
+  <section class="thread-pane">
+    <div class="thread-header" id="thread-header">Select a conversation</div>
+    <div class="thread" id="thread"></div>
+    <div class="typing-indicator" id="typing-indicator"></div>
+    <form class="composer" id="composer" style="display:none">
+      <input type="text" id="composer-input" placeholder="Type a reply…" autocomplete="off">
+      <button type="submit">Send</button>
+    </form>
+  </section>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="{% static 'js/socket.js' %}"></script>
+<script src="{% static 'js/inbox.js' %}"></script>
+{% endblock %}

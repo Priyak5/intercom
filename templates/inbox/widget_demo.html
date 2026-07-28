@@ -1,0 +1,122 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Visitor chat (demo)</title>
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+</head>
+<body class="widget-demo">
+  <div class="widget-card">
+    <div class="widget-head">
+      <span id="widget-title">Chat</span>
+      <span id="widget-status" class="widget-status">connecting…</span>
+    </div>
+    <div id="offline-banner" class="offline-banner" style="display:none">Reconnecting…</div>
+    <div class="thread" id="thread"></div>
+    <div class="typing-indicator" id="typing-indicator"></div>
+    <form class="composer" id="composer">
+      <input type="text" id="composer-input" placeholder="Type a message…" autocomplete="off" disabled>
+      <button type="submit" disabled>Send</button>
+    </form>
+    <p id="setup-hint" class="muted" style="padding:0 .8rem"></p>
+  </div>
+
+  <script src="{% static 'js/app.js' %}"></script>
+  <script src="{% static 'js/socket.js' %}"></script>
+  <script>
+    (function () {
+      var api = window.api;
+      var PUBLIC_KEY = "{{ public_key|escapejs }}";
+      var thread = document.getElementById("thread");
+      var input = document.getElementById("composer-input");
+      var sendBtn = document.querySelector("#composer button");
+      var statusEl = document.getElementById("widget-status");
+      var banner = document.getElementById("offline-banner");
+      var typingEl = document.getElementById("typing-indicator");
+      var hint = document.getElementById("setup-hint");
+
+      if (!PUBLIC_KEY) {
+        hint.textContent = "Append ?key=<workspace public_key> to this URL. Find it via /api/auth/me in the dashboard.";
+        return;
+      }
+
+      var token = null, convId = null, byClient = {}, lastTypingSent = 0, typingTimer = null;
+
+      function widgetFetch(path, method, body) {
+        var opts = { method: method, headers: {} };
+        if (token) opts.headers["X-Widget-Token"] = token;
+        if (body !== undefined) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+        return fetch(path, opts).then(function (r) {
+          return r.json().catch(function () { return null; }).then(function (d) { return { ok: r.ok, data: d }; });
+        });
+      }
+
+      function render(data) {
+        var cid = data.client_msg_id, existing = cid && byClient[cid];
+        if (existing) { existing.classList.remove("pending"); existing.classList.add("confirmed"); return; }
+        var el = document.createElement("div");
+        el.className = "msg msg-" + data.sender_type + " confirmed";
+        el.innerHTML = '<span class="msg-body">' + api.escapeHtml(data.body_text) + "</span>";
+        thread.appendChild(el);
+        if (cid) byClient[cid] = el;
+        thread.scrollTop = thread.scrollHeight;
+        if (data.seq) socket.sendControl({ action: "read", seq: data.seq });
+      }
+
+      function showTyping(d) {
+        if (!d || !d.is_typing) { typingEl.textContent = ""; return; }
+        typingEl.textContent = (d.name || "Agent") + " is typing…";
+        if (typingTimer) clearTimeout(typingTimer);
+        typingTimer = setTimeout(function () { typingEl.textContent = ""; }, 3000);
+      }
+
+      var socket = null;
+
+      // 1. Start a visitor session, then connect the socket.
+      widgetFetch("/api/widget/session", "POST", { public_key: PUBLIC_KEY }).then(function (r) {
+        if (!r.ok || !r.data) { hint.textContent = "Could not start a session (bad public_key?)."; return; }
+        token = r.data.token; convId = r.data.conversation_id;
+        document.getElementById("widget-title").textContent = (r.data.workspace && r.data.workspace.name) || "Chat";
+        input.disabled = false; sendBtn.disabled = false;
+
+        socket = window.createSocket({
+          wsUrl: "/ws/widget/?session=" + encodeURIComponent(token),
+          mode: "widget",
+          onStatus: function (s) { statusEl.textContent = s; banner.style.display = s === "offline" ? "block" : "none"; },
+          backfill: function (afterSeq) {
+            return widgetFetch("/api/widget/messages?after_seq=" + afterSeq, "GET").then(function (r) { return (r.data) || { results: [] }; });
+          },
+          onEvent: function (type, data) {
+            if (type === "message.created") render(data);
+            else if (type === "typing") showTyping(data);
+          },
+        });
+        socket.setConversation(convId);
+        socket.connect();
+      });
+
+      document.getElementById("composer").addEventListener("submit", function (e) {
+        e.preventDefault();
+        var body = input.value.trim();
+        if (!body || !token) return;
+        var cid = api.uuid();
+        var el = document.createElement("div");
+        el.className = "msg msg-contact pending";
+        el.innerHTML = '<span class="msg-body">' + api.escapeHtml(body) + "</span>";
+        thread.appendChild(el); byClient[cid] = el; thread.scrollTop = thread.scrollHeight;
+        input.value = "";
+        widgetFetch("/api/widget/messages", "POST", { client_msg_id: cid, body_text: body }).then(function (r) {
+          if (r.ok && r.data) { el.classList.remove("pending"); el.classList.add("confirmed"); }
+          else { el.classList.add("failed"); }
+        }).catch(function () { el.classList.add("failed"); });
+      });
+
+      input.addEventListener("input", function () {
+        var now = Date.now();
+        if (socket && now - lastTypingSent > 1500) { socket.sendControl({ action: "typing" }); lastTypingSent = now; }
+      });
+    })();
+  </script>
+</body>
+</html>
