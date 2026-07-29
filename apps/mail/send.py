@@ -6,15 +6,19 @@ headers make the reply thread correctly in the customer's mail client. Reply-To 
 a plus-address token so the customer's next reply comes back with routing info even if
 they strip References (path 2 fallback).
 
-Provider selection: RESEND_API_KEY (HTTPS API, works on Railway/Fly/Render) is
-preferred. When empty, falls back to smtplib against SMTP_* — kept for local dev and
-for hosts that permit SMTP. Either path marks `delivery_state=SENT` on success and
-`FAILED` on any error, and logs one structured line — no inline retry (documented in
-README Known Limitations).
+Provider selection: BREVO_API_KEY > RESEND_API_KEY > SMTP. Brevo (HTTPS) is preferred
+because it supports single-sender verification (no domain ownership needed — works with
+free mailboxes like Zoho). Resend (HTTPS) needs a verified custom domain. smtplib is
+the local-dev fallback; most PaaS block outbound SMTP ports. Every path marks
+`delivery_state=SENT` on success and `FAILED` on any error, and logs one structured
+line — no inline retry (documented in README Known Limitations).
 """
 
+import json
 import logging
 import smtplib
+import urllib.error
+import urllib.request
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 
@@ -73,6 +77,78 @@ def _mark_failed(message: Message) -> None:
 def _mark_sent(message: Message) -> None:
     message.delivery_state = DeliveryState.SENT
     message.save(update_fields=["delivery_state", "updated_at"])
+
+
+# --- Brevo HTTPS path -------------------------------------------------------
+
+
+def _send_via_brevo(*, message: Message, from_addr: str, to_addr: str, reply_to: str,
+                    subject: str, in_reply_to: str, references: list[str]) -> bool:
+    """Deliver via Brevo's HTTPS API. Single-sender verification lets us send from a
+    free mailbox (Zoho, etc.) without owning the domain — the trade-off is that Brevo
+    may rewrite the Message-ID header; we still send our In-Reply-To/References so
+    threading works in the customer's client even if reply-detection there falls back
+    to subject matching.
+    """
+    headers_out: dict[str, str] = {}
+    if message.email_message_id:
+        headers_out["Message-ID"] = message.email_message_id
+    if in_reply_to:
+        headers_out["In-Reply-To"] = in_reply_to
+    if references:
+        headers_out["References"] = " ".join(references)
+
+    # Brevo expects sender/to/replyTo as {name, email} objects; parse "Name <a@b>" or
+    # bare "a@b" into that shape.
+    def _parse(addr: str) -> dict[str, str]:
+        addr = (addr or "").strip()
+        if "<" in addr and ">" in addr:
+            name, _, rest = addr.partition("<")
+            email = rest.rstrip(">").strip()
+            return {"email": email, "name": name.strip().strip('"')}
+        return {"email": addr}
+
+    payload = {
+        "sender": _parse(from_addr),
+        "to": [_parse(to_addr)],
+        "replyTo": _parse(reply_to),
+        "subject": subject,
+        "textContent": message.body_text or "",
+        "headers": headers_out,
+    }
+    req = urllib.request.Request(
+        "https://api.brevo.com/v3/smtp/email",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "api-key": settings.BREVO_API_KEY,
+            "content-type": "application/json",
+            "accept": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=settings.SMTP_TIMEOUT) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            result = json.loads(body) if body else {}
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:500]
+        log.warning(
+            "brevo_send_failed conv=%s msg=%s status=%s error=%s",
+            message.conversation_id, message.id, exc.code, detail,
+        )
+        return False
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        log.warning(
+            "brevo_send_failed conv=%s msg=%s error=%r",
+            message.conversation_id, message.id, exc,
+        )
+        return False
+    log.info(
+        "brevo_send_ok conv=%s msg=%s mid=%s provider_id=%s to=%s",
+        message.conversation_id, message.id, message.email_message_id,
+        result.get("messageId"), to_addr,
+    )
+    return True
 
 
 # --- Resend HTTPS path ------------------------------------------------------
@@ -174,9 +250,10 @@ def send_reply(*, message: Message) -> None:
         _mark_failed(message)
         return
 
+    use_brevo = bool(settings.BREVO_API_KEY)
     use_resend = bool(settings.RESEND_API_KEY)
     use_smtp = bool(settings.SMTP_HOST and settings.SMTP_USER)
-    if not (use_resend or use_smtp):
+    if not (use_brevo or use_resend or use_smtp):
         log.warning("mail_send_skip_not_configured conv=%s msg=%s", conversation.id, message.id)
         _mark_failed(message)
         return
@@ -212,7 +289,12 @@ def send_reply(*, message: Message) -> None:
         "references": references,
     }
 
-    ok = _send_via_resend(**common) if use_resend else _send_via_smtp(**common)
+    if use_brevo:
+        ok = _send_via_brevo(**common)
+    elif use_resend:
+        ok = _send_via_resend(**common)
+    else:
+        ok = _send_via_smtp(**common)
     if ok:
         _mark_sent(message)
     else:
