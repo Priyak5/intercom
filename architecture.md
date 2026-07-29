@@ -313,6 +313,28 @@ money. IMAP polling needs a mailbox and nothing else, behaves identically on a l
 and in production, and preserves the headers threading depends on. The trade is ~30s
 inbound latency, which is documented.
 
+### Outbound provider selection: Brevo → Resend → SMTP
+
+`apps/mail/send.py::send_reply` picks the first configured provider, in this order:
+
+1. **Brevo (HTTPS API)** — preferred. Brevo's *single-sender verification* lets us
+   authorise a free mailbox (Zoho, Gmail, Yandex — anything) by clicking a link
+   Brevo emails to that address. No domain ownership, no DKIM setup, no dashboard
+   dance. The demo runs on `priyademo@zohomail.in`. Free tier is 300/day —
+   plenty for a POC.
+2. **Resend (HTTPS API)** — used when the deploy owns a domain and wants production
+   deliverability. Requires SPF/DKIM/DMARC verification of the sending domain.
+3. **SMTP (`smtplib`)** — fallback for local dev only. Railway and most PaaS block
+   outbound 25/465/587, so this deadlocks against a shipping host; kept because it
+   works on a laptop with any Zoho/Gmail app password.
+
+The three paths share the same threading-header logic (Message-ID / In-Reply-To /
+References computed once in `send_reply`, then handed to whichever transport). Brevo
+rewrites Message-ID on send — so our threading path 1 (matching on our own
+Message-ID) becomes best-effort with Brevo; paths 2 (plus-address Reply-To) and 3
+(sender + subject) still work reliably. Switching to Resend on a verified domain
+restores full Message-ID control with zero code change.
+
 ### Inbound pipeline
 
 ```
@@ -463,6 +485,21 @@ in production.
 ---
 
 ## 10. Deployment
+
+### Deploy target: Railway (currently live) with the VM setup as an alternative
+
+The live URL is served from Railway from the same `Dockerfile` below. On Railway
+the `caddy` compose service is unused because Railway's edge terminates TLS
+itself. Persistent SQLite lives on a Railway-managed volume mounted at
+`/app/data`. Custom domains (§9) register via Railway's GraphQL API
+(`customDomainCreate`) rather than Caddy's `on_demand_tls { ask ... }` — same
+`Domain` table, same DNS-verification middleware, different last-mile cert
+mechanism (see `README.md` **Custom domains** for the Railway-specific wiring).
+
+The Caddy path below still works and is the recommended shape for a self-hosted
+VM (Oracle Cloud Always Free, Hetzner, Fly, bare-metal). Everything downstream
+of the reverse proxy is identical between the two variants; only the front-door
+TLS+DNS layer differs.
 
 ### Dockerfile
 
