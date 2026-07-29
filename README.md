@@ -5,8 +5,21 @@ widget, email channel, unified inbox, knowledge base, AI summarization, and cust
 domains — built as a $0, single-process Django app. See `claude.md` (rules),
 `architecture.md` (design + trade-offs), and `plan.md` (build phases).
 
-- **Live URL:** _TBD (Phase 0 deploy) — `https://app.<domain>/healthz`_
-- **Test credentials:** _TBD (seeded in Phase 10)_
+- **Live URL:** [https://hvdjez12.up.railway.app](https://hvdjez12.up.railway.app) — health at [/healthz](https://hvdjez12.up.railway.app/healthz)
+- **Test credentials:** none pre-seeded — signup at [/signup](https://hvdjez12.up.railway.app/signup) creates a workspace atomically, see **For graders** below.
+
+## For graders — 5-minute tour
+
+Every feature from the assignment brief lives one click away from signup. Recommended path:
+
+1. **[Sign up](https://hvdjez12.up.railway.app/signup)** with any email + password. A workspace is created for you atomically; you land on an empty inbox as its admin.
+2. **Team management** — Topbar → **Team** → send yourself (or a colleague) an invite. Console email backend prints the accept URL to Railway logs, or paste the link straight from the flash message. Accept in incognito → sign in as an agent.
+3. **Live chat** — Open [/demo/](https://hvdjez12.up.railway.app/demo/) in a new tab (or `demo/index.html` served from any local origin). Replace `data-key` with your workspace `public_key` (Topbar → **Domains** page shows it, or `select public_key from accounts_workspace` via `railway run python manage.py shell`). Send a message from the widget → it appears in the dashboard within a second; agent reply appears back in the widget instantly. Typing indicators, presence, and read receipts all live.
+4. **Email channel** — Send an email to the support address configured for this deploy (currently `priyademo@zohomail.in`). Within ~30s the poller ingests it into the unified inbox. Agent reply from the dashboard goes out over Brevo (HTTPS API), threaded correctly via `In-Reply-To`/`References`.
+5. **Unified inbox** — Same list combines chat + email. Filter by `channel`, `status`, `assignee`, `q`. Assign, snooze, resolve — updates propagate live to other agents on the same workspace over WS.
+6. **Knowledge base** — Public at [/kb/&lt;your-workspace-slug&gt;/](https://hvdjez12.up.railway.app/kb/). Admin at [/kb/admin/](https://hvdjez12.up.railway.app/kb/admin/) with Quill editor. Search hits FTS5, ranking `bm25()`; widget's suggest calls the same table.
+7. **AI summarization** — Open any conversation with 5+ messages. Panel above the thread shows the JSON-schema summary. Without an Anthropic key the panel shows a `degraded: true` deterministic fallback (never spins forever — I8).
+8. **Custom domains** — [/domains](https://hvdjez12.up.railway.app/domains) as admin. Full flow documented in the **Custom domains** section below; live demo uses `hvdjez12.up.railway.app` as the CNAME target.
 
 ## Architecture
 
@@ -17,18 +30,28 @@ this README will carry the reader-facing summary as features land.
 
 ## Setup
 
+**Local dev**
+
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env            # then fill it in
 python manage.py migrate
 uvicorn config.asgi:application --port 8000   # --workers stays 1
-
-# docker — local: app only, reachable at http://127.0.0.1:8000
-docker compose up --build
-# on the VM: add Caddy (public TLS on 80/443) via the opt-in profile
-docker compose --profile proxy up -d --build
 ```
+
+**Live deploy (Railway — how the production URL above is served)**
+
+Push to `main` on the connected GitHub repo — Railway detects the Dockerfile, builds, and boots. `$PORT` is honored by the CMD ([Dockerfile:14-15](Dockerfile#L14-L15)). Persistent SQLite via a Railway volume mounted at `/app/data`. TLS terminates at Railway's edge (no Caddy needed there). Env vars set in the Railway dashboard mirror `.env.example`. Custom domains via Railway's dashboard or GraphQL API (see **Custom domains** section).
+
+**Self-hosted VM alternative (equivalent, not currently live)**
+
+```bash
+docker compose up --build                        # local: app only, http://127.0.0.1:8000
+docker compose --profile proxy up -d --build     # VM: adds Caddy for public TLS on 80/443
+```
+
+The Caddy path is fully wired (`Caddyfile`, on-demand TLS, internal `/api/internal/domain-allowed` endpoint) and documented in [architecture.md §10](architecture.md); it's the target for any redeploy to Oracle Cloud, Hetzner, Fly, or bare-metal.
 
 ## AI summarization
 
@@ -219,19 +242,15 @@ tried in order:
 3. Same sender + same normalised subject (strips `Re:`/`Fwd:`) within 7 days.
 4. Otherwise a fresh Conversation.
 
-**Deliverability & provider choice.** Outbound is Resend when `RESEND_API_KEY`
-is set — Railway, Fly.io, and most PaaS block outbound ports 25/465/587, so
-`smtplib` deadlocks against a shipping host. Resend's HTTPS API sidesteps that.
-Locally or on hosts that allow SMTP, leave `RESEND_API_KEY` empty and Zoho /
-Gmail app-passwords via `SMTP_*` still work — [`apps/mail/send.py`](apps/mail/send.py)
-picks the provider based on config with no code changes. Inbound polling is
-still IMAP over TLS on 993 (universally allowed).
+**Deliverability & provider choice.** Outbound picks the first provider configured, in order **Brevo → Resend → SMTP** ([`apps/mail/send.py`](apps/mail/send.py)):
 
-Production should set up **SPF**, **DKIM**, and **DMARC** on your sending
-domain — verify it in Resend (or your provider of choice), which returns the
-DNS records to add. `MAIL_FROM` must be an address on a domain you've verified;
-Resend's `onboarding@resend.dev` is fine for pre-verification testing but only
-deliverable to the Resend account owner's email.
+- **Brevo (HTTPS API)** — first because it supports *single-sender verification*: a free mailbox like `priyademo@zohomail.in` can be authorized by clicking a link Brevo emails to that address. No domain ownership required. This is what the live demo uses. Free tier is 300 emails/day.
+- **Resend (HTTPS API)** — second choice when you own a domain and want production-grade deliverability. Requires SPF/DKIM/DMARC verification on the sending domain in the Resend dashboard.
+- **SMTP (`smtplib`)** — local-dev fallback only. Railway, Fly.io, and most PaaS block outbound ports 25/465/587, so this deadlocks against a shipping host. Handy for hitting Zoho/Gmail app-passwords from a laptop.
+
+`MAIL_FROM` must exactly match the sender you verified in Brevo (or the domain you verified in Resend). Inbound polling is IMAP over TLS on 993 (universally allowed).
+
+Production deliverability requires **SPF**, **DKIM**, and **DMARC** on the sending domain — the switch from Brevo's single-sender flow to a verified domain (Brevo, Resend, or SES) is a config change, no code touch.
 
 ## Known Limitations
 
@@ -244,8 +263,8 @@ Populated as each phase lands; the full scaling-seam table lives in `architectur
 | Email channel handles **one workspace per deploy** (`MAIL_WORKSPACE_ID`)                                                   | Single shared support mailbox; every un-threaded inbound routes to one workspace                                                                          | Per-workspace catch-all address (e.g. `support-{slug}@domain`) or a mailbox per workspace, decoded in the poller                                                                                                                     |
 | Attachments in inbound email are stripped                                                                                  | Storage, download UX, virus scanning are non-trivial for POC                                                                                              | Save payloads to `data/attachments/<msg_id>/`, new `AttachmentMeta` model, per-conversation download endpoint                                                                                                                        |
 | Outbound email is best-effort, no inline retry                                                                             | `delivery_state=FAILED` is the visible signal; agent can resend manually                                                                                  | Wrap in a Job worker with exponential backoff (SummaryJob shape is the template)                                                                                                                                                     |
-| Outbound uses Resend (HTTPS) by default; SMTP path kept only for local dev                                                 | Railway and most PaaS block ports 25/465/587 — SMTP is a dead end on the demo host                                                                        | HTTPS API is production-grade; leave it. Only revisit if the customer needs a specific mailbox provider that lacks an HTTPS ingest API.                                                                                              |
-| `MAIL_FROM` must be on a Resend-verified domain (or `onboarding@resend.dev`)                                               | Resend refuses arbitrary domains to prevent spoofing                                                                                                      | Buy/own a domain and complete Resend's SPF+DKIM+DMARC setup                                                                                                                                                                          |
+| Outbound uses Brevo's single-sender flow (`priyademo@zohomail.in`) — no verified custom domain on the demo                 | Author doesn't own the sending domain; Brevo lets a single free mailbox be authorized without domain ownership. Selection order is Brevo → Resend → SMTP  | Buy a domain, verify it in Brevo/Resend, set SPF/DKIM/DMARC, swap `MAIL_FROM`. Zero code change — provider selection is env-driven in [`apps/mail/send.py`](apps/mail/send.py).                                                        |
+| `MAIL_FROM` must exactly equal the Brevo-verified sender (or Resend-verified domain)                                       | Both providers refuse arbitrary senders to prevent spoofing                                                                                                | Same as above — verify a domain, then any `@<domain>` local-part works                                                                                                                                                                |
 | IMAP polls every 30s (no IDLE)                                                                                             | Simpler; latency is fine for a POC                                                                                                                        | `imapclient` supports IDLE — wire a supervisor loop that falls back to polling on IDLE drops                                                                                                                                         |
 | Plus-address round-trip requires provider `+` sub-addressing                                                               | Gmail/Zoho support it; some corporate servers strip `+`                                                                                                   | `In-Reply-To`/`References` still threads via Path 1; corporate deployments should use a per-workspace catch-all instead                                                                                                              |
 | Inbox free-text search covers subject + contact name/email only, **not message bodies**                                    | Message-body search wants SQLite FTS5, which lands with the KB in Phase 6                                                                                 | Add an FTS5 virtual table mirroring `inbox_message.body_text`, sync from `post_message`, `UNION` its hits into the `?q=` filter                                                                                                      |
@@ -275,3 +294,5 @@ Populated as each phase lands; the full scaling-seam table lives in `architectur
 | Live custom-domain demo requires a purchased domain (~$2) or an `/etc/hosts` entry                                         | Author is on `*.up.railway.app` without a custom domain purchased                                                                                         | Buy any domain, point CNAME at `hvdjez12.up.railway.app`, add in dashboard, verify in our UI. All code paths are already tested.                                                                                                     |
 | Adding a tester's custom domain requires manual Railway-dashboard action by the app operator                               | Railway routes by Host header at its edge — only the account owner can register new hostnames on the service                                              | Wire Railway's public GraphQL API into `services.create_domain` so the app auto-provisions the hostname on Railway and returns the CNAME target to display. Standard pattern (Vercel / Fly / Cloudflare-for-SaaS) — ~1 hour of work. |
 | `ALLOWED_HOSTS=['*']` in production behind Railway                                                                         | Railway is the gatekeeper — only Railway-configured domains ever reach the container                                                                      | On a bare-metal deploy without an upstream proxy, tighten this to the specific hostnames + inject verified Domain hostnames on middleware init.                                                                                      |
+| No automated SQLite backup on Railway                                                                                      | Railway's volume durability + point-in-time snapshot is our backup story on this deploy. Nightly `VACUUM INTO` is designed for the self-hosted VM variant | Sweep thread runs `VACUUM INTO /app/data/backup-<date>.sqlite3` nightly on VM ([architecture.md §10](architecture.md)). For managed durability + PITR, swap to Postgres.                                                              |
+| No custom error page for `413 Payload Too Large` (WhiteNoise / uvicorn defaults)                                            | POC — Brevo attachments blocked upstream, KB uploads deferred (Known Limitation above). No user-visible 413 today.                                        | When attachments land, add a `413.html` alongside the existing 400/403/404/500 pages ([templates/](templates/)).                                                                                                                      |
