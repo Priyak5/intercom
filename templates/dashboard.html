@@ -1,15 +1,18 @@
 {% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
+{% block body_class %}dashboard-hero{% endblock %}
 {% block content %}
-{% if current_workspace %}
-<h2>{{ current_workspace.name }}</h2>
-<p>Signed in as {{ user.email }} ({{ current_membership.role }}).</p>
-<p class="muted">The unified inbox arrives in Phase 2. For now:</p>
-{% if current_membership.role == 'admin' %}
-<p><a class="btn" href="{% url 'team' %}">Manage team →</a></p>
-{% endif %}
-{% else %}
-<h2>No workspace</h2>
-<p class="muted">You don't belong to a workspace yet.</p>
-{% endif %}
+<div class="dash-card">
+  {% if current_workspace %}
+    <h1 class="dash-title">Welcome to {{ current_workspace.name }}</h1>
+    <p class="dash-sub">Signed in as {{ user.email }}</p>
+    <a class="dash-cta" href="{% url 'inbox' %}">Open inbox →</a>
+  {% else %}
+    <h1 class="dash-title">No workspace yet</h1>
+    <p class="dash-sub">
+      You don't belong to a workspace. Ask an admin to invite you, or sign up for a fresh one.
+    </p>
+    <a class="dash-cta" href="{% url 'signup' %}">Sign up →</a>
+  {% endif %}
+</div>
 {% endblock %}

@@ -43,6 +43,28 @@ body {
 body.inbox-full .content { max-width: 100%; margin: 0.8rem auto; padding: 0 1rem; }
 body.inbox-full .inbox { height: calc(100vh - 120px); }
 
+/* Dashboard: single centred welcome card, vertically anchored below the topbar. */
+body.dashboard-hero .content {
+  max-width: 100%; margin: 0; padding: 0;
+  min-height: calc(100vh - 60px);
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(180deg, #eef2ff 0%, #fafbfd 60%);
+}
+.dash-card {
+  background: #fff; border: 1px solid var(--border); border-radius: 14px;
+  padding: 2.4rem 2.6rem; text-align: center;
+  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.06);
+  max-width: 460px;
+}
+.dash-title { margin: 0 0 0.4rem; font-size: 1.6rem; }
+.dash-sub   { margin: 0 0 1.6rem; color: var(--muted); font-size: 0.95em; }
+.dash-cta {
+  display: inline-flex; align-items: center; height: 40px;
+  padding: 0 1.4rem; background: var(--accent); color: #fff;
+  border-radius: 8px; font-weight: 500; text-decoration: none;
+}
+.dash-cta:hover { filter: brightness(0.95); text-decoration: none; }
+
 /* --- auth pages --- */
 body.auth { display: flex; min-height: 100vh; align-items: center; justify-content: center; }
 .auth-card {
