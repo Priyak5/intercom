@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {% block title %}KB categories{% endblock %}
+{% block body_class %}kb-admin{% endblock %}
 {% block content %}
-<p><a href="{% url 'kb_admin_list' %}">← Back to knowledge base</a></p>
-<h1>Categories</h1>
+<a class="kb-admin-back" href="{% url 'kb_admin_list' %}">← Back to knowledge base</a>
+<h1 style="margin: 0 0 1.2rem;">Categories</h1>
 
 {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
 

@@ -152,6 +152,67 @@ table.members th { font-size: 0.8em; text-transform: uppercase; letter-spacing: 
 .summary-list { margin: 0.2rem 0 0; padding-left: 1.1rem; font-size: 0.88em; }
 .summary-list li { margin-bottom: 0.1rem; }
 
+/* --- KB admin (dashboard) --- */
+
+/* Wider container for KB admin pages — the article table wants room to breathe. */
+body.kb-admin .content { max-width: 1120px; margin-top: 1.6rem; }
+
+.kb-admin-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  margin: 0 0 1.4rem;
+}
+.kb-admin-toolbar h1 { margin: 0; font-size: 1.75rem; }
+.kb-admin-actions { display: flex; align-items: center; gap: 8px; }
+
+/* All toolbar links + buttons share the same 36px pill height so they align. */
+.kb-admin-actions .btn,
+.kb-admin-actions .kb-link {
+  display: inline-flex; align-items: center; height: 36px;
+  padding: 0 14px; margin: 0; border-radius: 8px; box-sizing: border-box;
+  font-size: 0.9em; font-weight: 500; line-height: 1;
+  text-decoration: none; white-space: nowrap;
+}
+.kb-admin-actions .btn        { background: var(--accent); color: #fff; border: 1px solid var(--accent); }
+.kb-admin-actions .btn:hover  { filter: brightness(0.95); }
+.kb-admin-actions .kb-link    { background: #fff; color: var(--fg); border: 1px solid var(--border); }
+.kb-admin-actions .kb-link:hover { background: #f2f5fb; text-decoration: none; }
+
+.kb-admin-back { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 0.9em; text-decoration: none; margin-bottom: 0.8rem; }
+.kb-admin-back:hover { color: var(--accent); text-decoration: none; }
+
+/* Table on the admin list */
+.kb-admin-table {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  background: #fff; border: 1px solid var(--border); border-radius: 10px;
+  overflow: hidden;
+}
+.kb-admin-table th, .kb-admin-table td {
+  text-align: left; padding: 0.7rem 0.9rem; border-bottom: 1px solid var(--border);
+}
+.kb-admin-table tr:last-child td { border-bottom: 0; }
+.kb-admin-table th { font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); background: #fbfbfd; font-weight: 600; }
+.kb-admin-table tbody tr:hover { background: #fafbfd; }
+.kb-admin-table td a { color: var(--fg); font-weight: 500; text-decoration: none; }
+.kb-admin-table td a:hover { color: var(--accent); }
+.kb-admin-table .remove-btn { height: 30px; padding: 0 12px; font-size: 0.82em; margin: 0; }
+
+/* Status pill — round, small, colour-coded. */
+.kb-badge {
+  display: inline-block; padding: 2px 10px; border-radius: 999px;
+  font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;
+}
+.kb-badge.published { background: #eaf6ee; color: #2f8f4e; }
+.kb-badge.draft     { background: #fff4e5; color: #8a5a00; }
+
+/* Empty state — subtle centred card instead of a bare paragraph. */
+.kb-empty {
+  padding: 3rem 1.5rem; text-align: center;
+  background: #fff; border: 1px dashed var(--border); border-radius: 12px;
+  color: var(--muted);
+}
+.kb-empty a { color: var(--accent); text-decoration: none; font-weight: 500; }
+.kb-empty a:hover { text-decoration: underline; }
+
 /* Channel badges in the conversation list */
 .channel-badge {
   display: inline-block; margin-left: 0.4rem; padding: 0 0.4rem;

@@ -47,13 +47,3 @@
 .pk-snippet { margin-top: 0.2rem; font-size: 0.9em; }
 
 .pk-foot { max-width: 880px; margin: 3rem auto 2rem; padding: 0 1.2rem; text-align: center; }
-
-/* Admin table extras — small, lives in app.css already so this file only adds */
-.kb-admin-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
-.kb-admin-actions { display: flex; gap: 0.8rem; align-items: center; }
-.kb-admin-table { width: 100%; border-collapse: collapse; background: #fff; }
-.kb-admin-table th, .kb-admin-table td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid #e2e5ea; }
-.kb-admin-table th { font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.03em; color: #6b7280; }
-.kb-badge { display: inline-block; padding: 0.05rem 0.5rem; border-radius: 10px; font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.04em; }
-.kb-badge.published { background: #eaf6ee; color: #2f8f4e; }
-.kb-badge.draft { background: #fff4e5; color: #8a5a00; }

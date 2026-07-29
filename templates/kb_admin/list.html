@@ -1,13 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Knowledge base{% endblock %}
+{% block body_class %}kb-admin{% endblock %}
 {% block content %}
 <div class="kb-admin-toolbar">
   <h1>Knowledge base</h1>
   <div class="kb-admin-actions">
     <a class="btn" href="{% url 'kb_admin_new' %}">New article</a>
-    <a href="{% url 'kb_admin_categories' %}">Categories</a>
+    <a class="kb-link" href="{% url 'kb_admin_categories' %}">Categories</a>
     {% if current_workspace %}
-    <a href="{% url 'kb_public_index' slug=current_workspace.slug %}" target="_blank" rel="noopener">View public site ↗</a>
+    <a class="kb-link" href="{% url 'kb_public_index' slug=current_workspace.slug %}" target="_blank" rel="noopener">View public site ↗</a>
     {% endif %}
   </div>
 </div>
@@ -38,6 +39,8 @@
   </tbody>
 </table>
 {% else %}
-<p class="muted">No articles yet. <a href="{% url 'kb_admin_new' %}">Write the first one</a>.</p>
+<div class="kb-empty">
+  No articles yet. <a href="{% url 'kb_admin_new' %}">Write the first one</a>.
+</div>
 {% endif %}
 {% endblock %}

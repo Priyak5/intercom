@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{% if article %}Edit article{% else %}New article{% endif %}{% endblock %}
+{% block body_class %}kb-admin{% endblock %}
 {% block extra_head %}
 <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet">
 <style>
@@ -13,8 +14,8 @@
 </style>
 {% endblock %}
 {% block content %}
-<p><a href="{% url 'kb_admin_list' %}">← Back to knowledge base</a></p>
-<h1>{% if article %}Edit article{% else %}New article{% endif %}</h1>
+<a class="kb-admin-back" href="{% url 'kb_admin_list' %}">← Back to knowledge base</a>
+<h1 style="margin: 0 0 1.2rem;">{% if article %}Edit article{% else %}New article{% endif %}</h1>
 
 {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
 {% if article and article.is_published %}
