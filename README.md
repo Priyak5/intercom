@@ -2,7 +2,7 @@
 
 A single-tenant-per-workspace customer support platform (Intercom-style): live chat
 widget, email channel, unified inbox, knowledge base, AI summarization, and custom
-domains — built as a $0, single-process Django app. See `claude.md` (rules),
+domains — built as a single-process Django app. See `claude.md` (rules),
 `architecture.md` (design + trade-offs), and `plan.md` (build phases).
 
 - **Live URL:** [https://intercom-pk.up.railway.app](https://intercom-pk.up.railway.app) — health at [/healthz](https://intercom-pk.up.railway.app/healthz)
