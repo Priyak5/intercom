@@ -38,6 +38,11 @@ body {
 .switcher select { padding: 0.3rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; }
 .content { max-width: 880px; margin: 1.5rem auto; padding: 0 1.2rem; }
 
+/* Inbox page uses the full viewport — the two-column layout wants width, not a
+   centered narrow column. See templates/inbox/inbox.html body_class="inbox-full". */
+body.inbox-full .content { max-width: 100%; margin: 0.8rem auto; padding: 0 1rem; }
+body.inbox-full .inbox { height: calc(100vh - 120px); }
+
 /* --- auth pages --- */
 body.auth { display: flex; min-height: 100vh; align-items: center; justify-content: center; }
 .auth-card {
@@ -173,23 +178,43 @@ body.widget-demo { display: flex; align-items: center; justify-content: center; 
 body.widget-demo .msg-agent { align-self: flex-start; background: #eef0f4; color: var(--fg); }
 body.widget-demo .msg-contact { align-self: flex-end; background: var(--accent); color: #fff; }
 
-/* Peer online status in the agent thread header */
-.thread-header { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
-.peer-presence { font-size: 0.8em; font-weight: 400; }
-.peer-presence.online { color: var(--ok); }
+/* Peer online status in the agent thread header — inline label with a small
+   coloured dot; nowrap so it never breaks to a second line. */
+.thread-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.peer-presence {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 0.85em; font-weight: 400; white-space: nowrap; line-height: 1;
+}
+.peer-presence.online  { color: var(--ok); }
 .peer-presence.offline { color: var(--muted); }
+.presence-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: currentColor;   /* inherits from .online / .offline */
+  flex-shrink: 0;
+}
 
-/* Thread action bar (assignee / snooze / resolve) */
-.thread-actions { display: inline-flex; align-items: center; gap: 0.4rem; }
-.thread-btn {
-  background: #fff; color: var(--fg); border: 1px solid var(--border); margin: 0;
-  padding: 0.25rem 0.65rem; border-radius: 6px; font-size: 0.82em; cursor: pointer;
+/* Thread action bar — all controls share the same height + 12px gap so they
+   align in one row. `white-space: nowrap` prevents "Snooze ▾" from splitting. */
+.thread-actions {
+  display: inline-flex; align-items: center; gap: 12px; flex-wrap: nowrap;
+}
+:where(.thread-actions) .thread-btn,
+:where(.thread-actions) .assign-menu {
+  height: 32px; line-height: 1; box-sizing: border-box; margin: 0;
+  padding: 0 0.75rem; border-radius: 6px; font-size: 0.85em;
+  border: 1px solid var(--border); background: #fff; color: var(--fg); cursor: pointer;
+  white-space: nowrap;
+}
+:where(.thread-actions) .assign-menu {
+  padding: 0 1.6rem 0 0.6rem; min-width: 130px;
 }
 .thread-btn:hover { background: #f2f5fb; }
 .thread-btn.reopen { background: var(--ok); color: #fff; border-color: var(--ok); }
 .resolve-btn { background: var(--accent); color: #fff; border-color: var(--accent); }
 .resolve-btn:hover { filter: brightness(0.95); }
-.assign-menu { padding: 0.25rem 0.4rem; font-size: 0.82em; }
+.snooze-wrap { display: inline-flex; }
 
 /* Snooze popover */
 .snooze-wrap { position: relative; }

@@ -80,7 +80,8 @@
 
   function showPresence(data) {
     if (!data || String(data.actor || "").indexOf("contact:") !== 0) return;
-    presenceEl.textContent = data.online ? "● online" : "○ offline";
+    var label = data.online ? "online" : "offline";
+    presenceEl.innerHTML = '<span class="presence-dot"></span>' + label;
     presenceEl.className = "peer-presence " + (data.online ? "online" : "offline");
   }
 

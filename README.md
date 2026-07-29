@@ -5,21 +5,36 @@ widget, email channel, unified inbox, knowledge base, AI summarization, and cust
 domains — built as a $0, single-process Django app. See `claude.md` (rules),
 `architecture.md` (design + trade-offs), and `plan.md` (build phases).
 
-- **Live URL:** [https://hvdjez12.up.railway.app](https://hvdjez12.up.railway.app) — health at [/healthz](https://hvdjez12.up.railway.app/healthz)
-- **Test credentials:** none pre-seeded — signup at [/signup](https://hvdjez12.up.railway.app/signup) creates a workspace atomically, see **For graders** below.
+- **Live URL:** [https://intercom-pk.up.railway.app](https://intercom-pk.up.railway.app) — health at [/healthz](https://intercom-pk.up.railway.app/healthz)
+- **Test credentials:** none pre-seeded — signup at [/signup](https://intercom-pk.up.railway.app/signup) creates a workspace atomically, see **Try it in 5 minutes** below.
+
+## Try it in 5 minutes
+
+The live app is at **[https://intercom-pk.up.railway.app/](https://intercom-pk.up.railway.app/)**. Sign up with any email + password — a workspace is created for you automatically and you land on its inbox as the admin. Then try each feature from the top navigation:
+
+- **Live chat.** Open the visitor demo, send a message as a customer, reply from the dashboard as the agent. Typing indicators, presence dots, and read receipts all update live in both windows.
+- **Email.** Send any email to the workspace's support address (`priyademo@zohomail.in` on this deploy). It appears as a new conversation in the inbox within ~30 seconds. Reply from the dashboard — the customer's mail client receives a properly threaded reply.
+- **Unified inbox.** Chat and email conversations share one list. Filter by status, channel, assignee, or free-text search.
+- **Assign, snooze, resolve.** Buttons at the top of every conversation. Updates go live to everyone in the workspace.
+- **Knowledge base.** Write an article in the rich-text editor. It's readable on your workspace's public help page and shows up as a suggestion inside the chat widget as visitors type.
+- **AI summary.** Open a conversation with 5 or more messages. A summary card appears above the thread — what the customer wants, what's been tried, current status, key details.
+- **Team.** Invite colleagues by email; they receive an accept link.
+- **Custom domains.** Add your own hostname (e.g. `help.yourdomain.com`) from the **Domains** page to serve your KB from that hostname over HTTPS. Setup steps in the **Custom domains** section below.
+
+For technical details on each feature (protocol design, tests, trade-offs), read the **For graders** section next.
 
 ## For graders — 5-minute tour
 
 Every feature from the assignment brief lives one click away from signup. Recommended path:
 
-1. **[Sign up](https://hvdjez12.up.railway.app/signup)** with any email + password. A workspace is created for you atomically; you land on an empty inbox as its admin.
+1. **[Sign up](https://intercom-pk.up.railway.app/signup)** with any email + password. A workspace is created for you atomically; you land on an empty inbox as its admin.
 2. **Team management** — Topbar → **Team** → send yourself (or a colleague) an invite. Console email backend prints the accept URL to Railway logs, or paste the link straight from the flash message. Accept in incognito → sign in as an agent.
-3. **Live chat** — Open [/demo/](https://hvdjez12.up.railway.app/demo/) in a new tab (or `demo/index.html` served from any local origin). Replace `data-key` with your workspace `public_key` (Topbar → **Domains** page shows it, or `select public_key from accounts_workspace` via `railway run python manage.py shell`). Send a message from the widget → it appears in the dashboard within a second; agent reply appears back in the widget instantly. Typing indicators, presence, and read receipts all live.
+3. **Live chat** — Open [/widget/test/](https://intercom-pk.up.railway.app/widget/test/) in a new tab (or `demo/index.html` served from any local origin). Append `?key=<your-workspace-public_key>` to the URL — find the key via `/api/auth/me` after signup, or `Workspace.objects.first().public_key` in `railway run python manage.py shell`. Send a message from the widget → it appears in the dashboard within a second; agent reply appears back in the widget instantly. Typing indicators, presence, and read receipts all live.
 4. **Email channel** — Send an email to the support address configured for this deploy (currently `priyademo@zohomail.in`). Within ~30s the poller ingests it into the unified inbox. Agent reply from the dashboard goes out over Brevo (HTTPS API), threaded correctly via `In-Reply-To`/`References`.
 5. **Unified inbox** — Same list combines chat + email. Filter by `channel`, `status`, `assignee`, `q`. Assign, snooze, resolve — updates propagate live to other agents on the same workspace over WS.
-6. **Knowledge base** — Public at [/kb/&lt;your-workspace-slug&gt;/](https://hvdjez12.up.railway.app/kb/). Admin at [/kb/admin/](https://hvdjez12.up.railway.app/kb/admin/) with Quill editor. Search hits FTS5, ranking `bm25()`; widget's suggest calls the same table.
+6. **Knowledge base** — Public at [/kb/&lt;your-workspace-slug&gt;/](https://intercom-pk.up.railway.app/kb/). Admin at [/kb/admin/](https://intercom-pk.up.railway.app/kb/admin/) with Quill editor. Search hits FTS5, ranking `bm25()`; widget's suggest calls the same table.
 7. **AI summarization** — Open any conversation with 5+ messages. Panel above the thread shows the JSON-schema summary. Without an Anthropic key the panel shows a `degraded: true` deterministic fallback (never spins forever — I8).
-8. **Custom domains** — [/domains](https://hvdjez12.up.railway.app/domains) as admin. Full flow documented in the **Custom domains** section below; live demo uses `hvdjez12.up.railway.app` as the CNAME target.
+8. **Custom domains** — [/domains](https://intercom-pk.up.railway.app/domains) as admin. Full flow documented in the **Custom domains** section below; live demo uses `hvdjez12.up.railway.app` as the CNAME target.
 
 ## Architecture
 
