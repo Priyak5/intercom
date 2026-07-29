@@ -19,7 +19,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.text import slugify
 
-from apps.accounts.models import Invite, Membership, Role, Workspace
+from apps.accounts.models import Domain, Invite, Membership, Role, Workspace
 from apps.core import exceptions as exc
 
 User = get_user_model()
@@ -237,3 +237,77 @@ def set_selected_workspace(*, request, workspace_id: str) -> Membership:
 def list_members(*, workspace: Workspace):
     """Members of a workspace (read helper; always workspace-scoped, I6)."""
     return workspace.memberships.select_related("user").order_by("created_at")
+
+
+# --- custom domains (Phase 9) ---------------------------------------------
+
+def _norm_host(hostname: str) -> str:
+    """Lowercase + strip. No punycoding / IDN handling — POC scope."""
+    return (hostname or "").strip().lower().rstrip(".")
+
+
+def create_domain(*, workspace: Workspace, hostname: str) -> Domain:
+    """Bind a hostname to a workspace in the pending state. Unique across all
+    workspaces (a hostname points to exactly one workspace). Returns the Domain;
+    verification is a separate step (see `verify_domain`).
+    """
+    host = _norm_host(hostname)
+    if not host or "." not in host:
+        raise exc.ValidationError("Enter a hostname like help.example.com.")
+    try:
+        with transaction.atomic():
+            domain = Domain.objects.create(
+                workspace=workspace,
+                hostname=host,
+                verify_token=secrets.token_urlsafe(24),
+            )
+    except IntegrityError:
+        raise exc.SlugCollision("That hostname is already registered.")
+    log.info(
+        "domain_created workspace_id=%s domain_id=%s hostname=%s",
+        workspace.id, domain.id, domain.hostname,
+    )
+    return domain
+
+
+def verify_domain(*, domain: Domain) -> Domain:
+    """Mark the domain verified.
+
+    STUB (Phase 9 shortcut, called out in the assignment brief):
+    A production implementation would use `dnspython` to run TWO checks and
+    require both to pass before flipping `verified_at`:
+
+      1. `dns.resolver.resolve(domain.hostname, "CNAME")` returns a record
+         whose canonical target equals `settings.BASE_HOST` — proves the
+         operator's DNS points traffic at us.
+      2. `dns.resolver.resolve(f"_verify.{domain.hostname}", "TXT")` returns
+         a chunk equal to `domain.verify_token` — proves ownership of the DNS
+         zone (an attacker can't create the TXT record on a domain they don't
+         control).
+
+    Both checks would be wrapped in a short timeout (~4s) so a slow DNS
+    resolver can't hang the request. Failures would populate a `verify_error`
+    column and leave `verified_at=None`.
+
+    We stub it here to keep the POC dependency-light and demoable without a
+    purchased domain — the README documents the production path in full.
+    """
+    domain.verified_at = timezone.now()
+    domain.save(update_fields=["verified_at", "updated_at"])
+    log.info(
+        "domain_verified workspace_id=%s domain_id=%s hostname=%s (stub)",
+        domain.workspace_id, domain.id, domain.hostname,
+    )
+    return domain
+
+
+def delete_domain(*, domain: Domain) -> None:
+    log.info(
+        "domain_deleted workspace_id=%s domain_id=%s hostname=%s",
+        domain.workspace_id, domain.id, domain.hostname,
+    )
+    domain.delete()
+
+
+def list_domains(*, workspace: Workspace):
+    return workspace.domains.order_by("created_at")

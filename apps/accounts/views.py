@@ -6,15 +6,17 @@ the dashboard shell, and the workspace switcher (all session + form-CSRF).
 
 import logging
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login as auth_login
 from django.contrib.auth import logout as auth_logout
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import redirect, render
+from django.contrib.auth.views import redirect_to_login
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods, require_POST
 
 from apps.accounts import services
-from apps.accounts.models import Invite, Role
+from apps.accounts.models import Domain, Invite, Role
 from apps.core.exceptions import ServiceError
 
 log = logging.getLogger("accounts.views")
@@ -68,8 +70,13 @@ def logout(request):
     return redirect("login")
 
 
-@login_required
 def dashboard(request):
+    # A visitor hitting the root of a custom domain (help.acme.com/) should land
+    # on that workspace's public KB, not on the dashboard login. Phase 9.
+    if getattr(request, "is_custom_domain", False) and request.workspace is not None:
+        return redirect("kb_public_index", slug=request.workspace.slug)
+    if not request.user.is_authenticated:
+        return redirect_to_login(request.get_full_path())
     return render(request, "dashboard.html", {})
 
 
@@ -99,6 +106,73 @@ def workspace_switch(request):
     except ServiceError as e:
         messages.error(request, e.detail)
     return redirect(request.META.get("HTTP_REFERER") or "dashboard")
+
+
+# --- custom domains (Phase 9) ---------------------------------------------
+#
+# Admin-only. Cross-workspace requests 404 (workspace-scoped fetches, I6). The
+# `verify` action calls a stubbed service; production DNS verification is the
+# tradeoff documented in README + services.verify_domain's docstring.
+
+
+def _require_admin(request):
+    if request.membership is None or request.membership.role != Role.ADMIN:
+        messages.error(request, "Admin role required.")
+        return redirect("dashboard")
+    return None
+
+
+@login_required
+def domains(request):
+    denied = _require_admin(request)
+    if denied is not None:
+        return denied
+    return render(
+        request,
+        "accounts/domains.html",
+        {
+            "domains": services.list_domains(workspace=request.workspace),
+            "base_host": settings.BASE_HOST,
+        },
+    )
+
+
+@require_POST
+@login_required
+def domain_add(request):
+    denied = _require_admin(request)
+    if denied is not None:
+        return denied
+    try:
+        services.create_domain(
+            workspace=request.workspace,
+            hostname=request.POST.get("hostname", ""),
+        )
+    except ServiceError as e:
+        messages.error(request, e.detail)
+    return redirect("domains")
+
+
+@require_POST
+@login_required
+def domain_verify(request, domain_id):
+    denied = _require_admin(request)
+    if denied is not None:
+        return denied
+    domain = get_object_or_404(Domain, id=domain_id, workspace=request.workspace)
+    services.verify_domain(domain=domain)
+    return redirect("domains")
+
+
+@require_POST
+@login_required
+def domain_delete(request, domain_id):
+    denied = _require_admin(request)
+    if denied is not None:
+        return denied
+    domain = get_object_or_404(Domain, id=domain_id, workspace=request.workspace)
+    services.delete_domain(domain=domain)
+    return redirect("domains")
 
 
 @require_http_methods(["GET", "POST"])

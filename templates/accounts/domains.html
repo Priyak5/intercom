@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Custom domains{% endblock %}
+{% block content %}
+<h1>Custom domains</h1>
+<p class="muted">
+  Connect a hostname (e.g. <code>help.acme.com</code>) so this workspace's public
+  knowledge base serves from it. Point a <code>CNAME</code> at
+  <code>{{ base_host }}</code>, then click Verify.
+</p>
+
+<div class="invite">
+  <form method="post" action="{% url 'domain_add' %}">
+    {% csrf_token %}
+    <label>Hostname
+      <input type="text" name="hostname" placeholder="help.your-domain.com" required autocomplete="off">
+    </label>
+    <button type="submit">Add domain</button>
+  </form>
+</div>
+
+{% if domains %}
+<table class="members">
+  <thead>
+    <tr>
+      <th>Hostname</th>
+      <th>Status</th>
+      <th>Added</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for d in domains %}
+    <tr>
+      <td>{{ d.hostname }}</td>
+      <td>
+        {% if d.verified_at %}
+          <span class="kb-badge published">Verified</span>
+        {% else %}
+          <span class="kb-badge draft">Pending</span>
+        {% endif %}
+      </td>
+      <td class="muted">{{ d.created_at|date:"Y-m-d H:i" }}</td>
+      <td>
+        {% if not d.verified_at %}
+        <form method="post" action="{% url 'domain_verify' domain_id=d.id %}" class="inline">
+          {% csrf_token %}<button type="submit">Verify</button>
+        </form>
+        {% endif %}
+        <form method="post" action="{% url 'domain_delete' domain_id=d.id %}" class="inline"
+              onsubmit="return confirm('Remove this domain?')">
+          {% csrf_token %}<button type="submit" class="remove-btn">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No domains connected yet.</p>
+{% endif %}
+{% endblock %}

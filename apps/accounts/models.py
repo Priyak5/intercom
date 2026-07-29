@@ -136,3 +136,29 @@ class Invite(BaseModel):
 
     def __str__(self) -> str:
         return f"invite<{self.email}@{self.workspace_id}>"
+
+
+class Domain(BaseModel):
+    """A custom hostname (e.g. `help.acme.com`) bound to a workspace so that its
+    public KB serves from that host. Verified once — see accounts.services.verify_domain
+    for the (stubbed) verification path — after which TenantMiddleware routes matching
+    Host headers to `workspace`.
+
+    TLS is provisioned outside our code: on Railway the operator adds the custom
+    domain in Railway's dashboard and Railway auto-issues Let's Encrypt. Documented
+    in README.
+    """
+
+    workspace = models.ForeignKey(
+        "accounts.Workspace", on_delete=models.CASCADE, related_name="domains"
+    )
+    hostname = models.CharField(max_length=253, unique=True)  # lowercased by services
+    verify_token = models.CharField(max_length=48, editable=False)  # for the (production) TXT check
+    verified_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["hostname"])]
+
+    def __str__(self) -> str:
+        state = "verified" if self.verified_at else "pending"
+        return f"{self.hostname} ({state})"

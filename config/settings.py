@@ -45,13 +45,22 @@ if not DEBUG and SECRET_KEY.startswith("django-insecure-"):
 
 # localhost/127.0.0.1 are always allowed so the in-container healthcheck (which hits
 # http://localhost:8000/healthz) passes regardless of the public hostname.
-ALLOWED_HOSTS = list(dict.fromkeys(["localhost", "127.0.0.1", *env_list("ALLOWED_HOSTS")]))
+# DEBUG=1 (local dev) accepts any Host header so custom-domain testing via /etc/hosts
+# works without editing .env for each new hostname — the middleware's Domain lookup
+# is the real tenant gate. Production sets DEBUG=0 and enumerates hosts explicitly.
+if DEBUG:
+    ALLOWED_HOSTS = ["*"]
+else:
+    ALLOWED_HOSTS = list(dict.fromkeys(["localhost", "127.0.0.1", *env_list("ALLOWED_HOSTS")]))
 
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
 
 # Non-secret, but handy for building absolute URLs and the custom-domain flow.
 BASE_URL = env("BASE_URL", "http://localhost:8000")
 BASE_DOMAIN = env("BASE_DOMAIN", "localhost")
+# The hostname a customer's CNAME record should point at. Shown as a hint on
+# the /domains page. On Railway, this is the app's `*.up.railway.app` hostname.
+BASE_HOST = env("BASE_HOST", BASE_DOMAIN)
 
 
 # --- applications -----------------------------------------------------------

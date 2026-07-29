@@ -244,6 +244,24 @@ def test_filtered_list_does_not_leak_across_workspaces(client_a, admin_a, admin_
     assert "B-shared-term" not in subjects
 
 
+# --- domains (Phase 9): cross-workspace admin ops are 404, not a leak -----
+
+def test_admin_cannot_verify_or_delete_another_workspaces_domain(client_a, admin_a, admin_b):
+    from apps.accounts import services as accounts_services
+
+    b_domain = accounts_services.create_domain(
+        workspace=admin_b.workspace, hostname="help.b.example",
+    )
+    # Try to verify B's domain via A's client → 404 (row not in A's workspace scope).
+    resp = client_a.post(f"/domains/{b_domain.id}/verify")
+    assert resp.status_code == 404
+    resp = client_a.post(f"/domains/{b_domain.id}/delete")
+    assert resp.status_code == 404
+    # B's domain is untouched.
+    b_domain.refresh_from_db()
+    assert b_domain.verified_at is None
+
+
 def test_admin_cannot_lock_themselves_out(client_a, admin_a):
     # The sole admin cannot self-remove or self-demote (self-guards raise 400 before
     # the last-admin check is even reached).

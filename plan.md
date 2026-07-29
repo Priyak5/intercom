@@ -262,21 +262,30 @@ costs nothing; a broken one costs credibility.
 
 ## Phase 9 — Custom domains (Day 10, first half)
 
-Requirement #7.
+Requirement #7 (minimal / stubbed edition — assignment brief explicitly permits
+stubbing DNS verification).
 
-- [ ] `Domain` model with `verify_token`, `verified_at`, `ssl_status`
-- [ ] `POST /api/domains` returns the exact CNAME + TXT records to set
-- [ ] `POST /api/domains/{id}/verify` — `dnspython` resolution check, sets `verified_at`
-- [ ] `GET /api/internal/domain-allowed?domain=` — 200 only for verified domains;
-      not reachable through the public proxy
-- [ ] Caddy `on_demand_tls { ask ... }` wired; cert issues on first request
-- [ ] Host-header → `Domain` → `Workspace` resolution in middleware
-- [ ] UI: add domain, show pending DNS instructions, verified/SSL state
-- [ ] End-to-end demo using `help-demo.<domain>` as a stand-in customer domain
+- [x] `Domain` model with `hostname`, `verify_token`, `verified_at`. `ssl_status`
+      column not needed on Railway (edge provisions Let's Encrypt automatically).
+- [x] Host-header → verified `Domain` → `Workspace` resolution in
+      [`TenantMiddleware._resolve_public_kb_by_host`](intercom/apps/core/middleware.py),
+      running before the path-based fallback. Dashboard hostnames guarded.
+- [x] Admin UI at `/domains` — add / verify / delete, admin-only, workspace-scoped.
+- [x] Verify action is a **stub** — flips `verified_at` immediately.
+      `services.verify_domain` docstring documents the production dnspython
+      CNAME + TXT flow line-by-line, and README explains the same.
+- [x] Dashboard redirect: on a custom-domain hit to `/`, redirect to the
+      workspace's KB index (visitor never sees the login page).
+- [x] SSL provisioning **documented** — Railway auto-Let's Encrypt is the
+      primary path; Cloudflare-proxy + Caddy `on_demand_tls` alternatives noted
+      in the README.
+- [ ] Live end-to-end demo (`help-demo.<real-domain>` serving a workspace's KB)
+      — pending a purchased domain; documented as a Known Limitation.
 
-**Gate:** `https://help-demo.<domain>` serves that workspace's KB with a valid
-Let's Encrypt certificate obtained automatically. An unverified hostname is refused
-a certificate.
+**Gate (minimal):** From the dashboard, add and verify `help.example.com`.
+With a temporary `/etc/hosts` entry, hitting `http://help.example.com:8000/`
+redirects to the workspace's KB. Cross-workspace domain operations 404.
+Tenancy test suite green.
 
 ---
 

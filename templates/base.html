@@ -28,6 +28,7 @@
       {% endif %}
       {% if current_membership and current_membership.role == 'admin' %}
       <a href="{% url 'team' %}">Team</a>
+      <a href="{% url 'domains' %}">Domains</a>
       {% endif %}
       <span class="who">{{ user.email }}</span>
       <form method="post" action="{% url 'logout' %}" class="inline">{% csrf_token %}<button type="submit">Log out</button></form>
