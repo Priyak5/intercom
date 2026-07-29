@@ -194,6 +194,16 @@ CSRF_COOKIE_HTTPONLY = False  # JS reads the CSRF cookie for fetch() headers.
 CSRF_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SECURE = not DEBUG
 
+# Baseline browser hardening. HSTS is intentionally short (1h) so a wrong TLS config
+# doesn't lock users out of the domain for months during a POC. Widget frame view
+# opts out of X-Frame-Options via @xframe_options_exempt (apps/inbox/views.py) — it
+# is embedded in a cross-origin iframe on customer sites by design.
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = "DENY"
+if not DEBUG:
+    SECURE_HSTS_SECONDS = 3600
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+
 
 # --- auth / DRF -------------------------------------------------------------
 
